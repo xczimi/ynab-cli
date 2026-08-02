@@ -1,5 +1,7 @@
 pub mod auth;
+pub mod budgets;
 pub mod config_cmd;
+pub mod context;
 
 use clap::{Parser, Subcommand};
 
@@ -14,6 +16,12 @@ use crate::error::Result;
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
+    /// Output raw API JSON instead of a table
+    #[arg(long, global = true)]
+    pub json: bool,
+    /// Budget id (default: config default_budget, then the API's last-used)
+    #[arg(long, global = true, value_name = "BUDGET")]
+    pub budget: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -28,6 +36,17 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    /// List budgets
+    Budgets {
+        #[command(subcommand)]
+        command: BudgetsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BudgetsCommand {
+    /// List all budgets
+    List,
 }
 
 #[derive(Debug, Subcommand)]
@@ -49,6 +68,8 @@ pub enum ConfigCommand {
 }
 
 pub async fn run(cli: Cli) -> Result<()> {
+    let json = cli.json;
+    let budget = cli.budget.clone();
     match cli.command {
         Command::Auth { command } => {
             let store = crate::secrets::SecretStore::new()?;
@@ -62,6 +83,12 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Config { command } => match command {
             ConfigCommand::Get { key } => config_cmd::get(&key),
             ConfigCommand::Set { key, value } => config_cmd::set(&key, &value),
+        },
+        Command::Budgets { command } => match command {
+            BudgetsCommand::List => {
+                let ctx = context::build_ctx(json, budget.as_deref())?;
+                budgets::list(&ctx).await
+            }
         },
     }
 }
