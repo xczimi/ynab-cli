@@ -23,8 +23,10 @@ fn unknown_command_fails() {
 
 #[test]
 fn errors_go_to_stderr_with_prefix() {
+    let dir = tempfile::tempdir().unwrap();
     Command::cargo_bin("ynab")
         .unwrap()
+        .env("YNAB_CLI_CONFIG_DIR", dir.path())
         .args(["config", "get", "definitely-not-a-key"])
         .assert()
         .failure()
