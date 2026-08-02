@@ -1,7 +1,10 @@
 use reqwest::StatusCode;
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::api::types::{BudgetsWrapper, DataEnvelope, ErrorEnvelope, User, UserWrapper};
+use crate::api::types::{
+    AccountsWrapper, BudgetsWrapper, CategoryGroupsWrapper, DataEnvelope, ErrorEnvelope, PayeesWrapper,
+    TransactionsWrapper, User, UserWrapper,
+};
 use crate::error::{Error, Result};
 
 const BASE_URL: &str = "https://api.ynab.com/v1";
@@ -81,6 +84,33 @@ impl Client {
 
     pub async fn get_budgets(&self) -> Result<ListResult<BudgetsWrapper>> {
         self.get_data("/budgets").await
+    }
+
+    pub async fn get_accounts(&self, budget: &str) -> Result<ListResult<AccountsWrapper>> {
+        self.get_data(&format!("/budgets/{budget}/accounts")).await
+    }
+
+    pub async fn get_categories(
+        &self,
+        budget: &str,
+    ) -> Result<ListResult<CategoryGroupsWrapper>> {
+        self.get_data(&format!("/budgets/{budget}/categories")).await
+    }
+
+    pub async fn get_payees(&self, budget: &str) -> Result<ListResult<PayeesWrapper>> {
+        self.get_data(&format!("/budgets/{budget}/payees")).await
+    }
+
+    pub async fn get_transactions(
+        &self,
+        budget: &str,
+        since_date: Option<&str>,
+    ) -> Result<ListResult<TransactionsWrapper>> {
+        let path = match since_date {
+            Some(d) => format!("/budgets/{budget}/transactions?since_date={d}"),
+            None => format!("/budgets/{budget}/transactions"),
+        };
+        self.get_data(&path).await
     }
 }
 
@@ -192,5 +222,70 @@ mod tests {
 
         let err = client(&server).get_budgets().await.unwrap_err();
         assert!(matches!(err, crate::error::Error::Decode(_)));
+    }
+
+    #[tokio::test]
+    async fn get_accounts_hits_budget_scoped_path() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/budgets/b-1/accounts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "accounts": [
+                    { "id": "a-1", "name": "Chequing", "type": "checking",
+                      "on_budget": true, "closed": false, "balance": 100500,
+                      "deleted": false }
+                ], "server_knowledge": 42 }
+            })))
+            .mount(&server)
+            .await;
+
+        let r = client(&server).get_accounts("b-1").await.unwrap();
+        assert_eq!(r.parsed.accounts[0].kind, "checking");
+        assert_eq!(r.raw["server_knowledge"], 42);
+    }
+
+    #[tokio::test]
+    async fn get_transactions_passes_since_date() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/budgets/last-used/transactions"))
+            .and(wiremock::matchers::query_param("since_date", "2026-07-01"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "transactions": [], "server_knowledge": 1 }
+            })))
+            .mount(&server)
+            .await;
+
+        let r = client(&server)
+            .get_transactions("last-used", Some("2026-07-01"))
+            .await
+            .unwrap();
+        assert!(r.parsed.transactions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_categories_and_payees_parse() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/budgets/b-1/categories"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "category_groups": [], "server_knowledge": 1 }
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/budgets/b-1/payees"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "payees": [
+                    { "id": "p-1", "name": "Grocer", "deleted": false }
+                ], "server_knowledge": 1 }
+            })))
+            .mount(&server)
+            .await;
+
+        let c = client(&server).get_categories("b-1").await.unwrap();
+        assert!(c.parsed.category_groups.is_empty());
+        let p = client(&server).get_payees("b-1").await.unwrap();
+        assert_eq!(p.parsed.payees[0].name, "Grocer");
     }
 }
