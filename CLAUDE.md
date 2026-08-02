@@ -99,8 +99,11 @@ transactions, payee locations, single-item `get` subcommands.
 
 ## Config
 
-- TOML at the platform config dir (`~/.config/ynab-cli/config.toml`;
-  `%APPDATA%` on Windows).
+- TOML at the platform config dir as resolved by the `directories` crate
+  (decided 2026-08-02: follow OS convention, don't override crate internals):
+  macOS `~/Library/Application Support/ynab-cli/config.toml`, Linux XDG
+  `~/.config/ynab-cli/config.toml`, Windows `%APPDATA%`. On macOS config and
+  cache share the same directory.
 - v1 keys: `cache` (bool, default true), `default_budget`. Nothing else until
   needed. **No secrets in the config file, ever.**
 
