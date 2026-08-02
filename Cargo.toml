@@ -22,8 +22,11 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
 secrecy = "0.10"
+toml = "0.8"
+directories = "6"
 
 [dev-dependencies]
 wiremock = "0.6"
 assert_cmd = "2"
 predicates = "3"
+tempfile = "3"
