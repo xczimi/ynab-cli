@@ -2,8 +2,14 @@ use clap::{Parser, Subcommand};
 
 use crate::error::{Error, Result};
 
+pub mod config_cmd;
+
 #[derive(Debug, Parser)]
-#[command(name = "ynab", version, about = "Absolutely read-only CLI for the YNAB API")]
+#[command(
+    name = "ynab",
+    version,
+    about = "Absolutely read-only CLI for the YNAB API"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -44,6 +50,9 @@ pub enum ConfigCommand {
 pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Auth { .. } => Err(Error::Config("not implemented".into())),
-        Command::Config { .. } => Err(Error::Config("not implemented".into())),
+        Command::Config { command } => match command {
+            ConfigCommand::Get { key } => config_cmd::get(&key),
+            ConfigCommand::Set { key, value } => config_cmd::set(&key, &value),
+        },
     }
 }

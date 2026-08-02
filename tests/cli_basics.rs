@@ -23,10 +23,9 @@ fn unknown_command_fails() {
 
 #[test]
 fn errors_go_to_stderr_with_prefix() {
-    // `config get` is unimplemented in this task; its error must follow the contract.
     Command::cargo_bin("ynab")
         .unwrap()
-        .args(["config", "get", "cache"])
+        .args(["config", "get", "definitely-not-a-key"])
         .assert()
         .failure()
         .stderr(predicate::str::starts_with("error: "));
