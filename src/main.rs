@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello, world!");
+    // CLI wired up in the cli module tasks.
 }
