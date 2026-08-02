@@ -1,10 +1,16 @@
 use reqwest::StatusCode;
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::api::types::{DataEnvelope, ErrorEnvelope, User, UserWrapper};
+use crate::api::types::{BudgetsWrapper, DataEnvelope, ErrorEnvelope, User, UserWrapper};
 use crate::error::{Error, Result};
 
 const BASE_URL: &str = "https://api.ynab.com/v1";
+
+#[derive(Debug)]
+pub struct ListResult<T> {
+    pub raw: serde_json::Value,
+    pub parsed: T,
+}
 
 pub struct Client {
     http: reqwest::Client,
@@ -55,6 +61,26 @@ impl Client {
     pub async fn get_user(&self) -> Result<User> {
         let env: DataEnvelope<UserWrapper> = self.get_json("/user").await?;
         Ok(env.data.user)
+    }
+
+    /// GET `path`, keep the raw `data` object AND a typed parse of it.
+    /// Raw is what `--json` prints — the API schema, mirrored exactly.
+    pub(crate) async fn get_data<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<ListResult<T>> {
+        let value: serde_json::Value = self.get_json(path).await?;
+        let raw = value
+            .get("data")
+            .cloned()
+            .ok_or_else(|| Error::Decode("missing data envelope".into()))?;
+        let parsed = serde_json::from_value(raw.clone())
+            .map_err(|e| Error::Decode(e.to_string()))?;
+        Ok(ListResult { raw, parsed })
+    }
+
+    pub async fn get_budgets(&self) -> Result<ListResult<BudgetsWrapper>> {
+        self.get_data("/budgets").await
     }
 }
 
@@ -126,5 +152,45 @@ mod tests {
 
         let err = client(&server).get_user().await.unwrap_err();
         assert_eq!(err.to_string(), "YNAB API error (500): server exploded");
+    }
+
+    #[tokio::test]
+    async fn get_budgets_parses_and_keeps_raw() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/budgets"))
+            .and(header("Authorization", "Bearer tok-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {
+                    "budgets": [
+                        { "id": "b-1", "name": "Family", "first_month": "2025-01-01",
+                          "last_month": "2026-08-01",
+                          "some_future_field": { "kept": true } }
+                    ],
+                    "default_budget": null
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client(&server).get_budgets().await.unwrap();
+        assert_eq!(result.parsed.budgets.len(), 1);
+        assert_eq!(result.parsed.budgets[0].name, "Family");
+        // raw keeps fields the typed parse ignores
+        assert_eq!(result.raw["budgets"][0]["some_future_field"]["kept"], true);
+        assert!(result.raw.get("default_budget").is_some());
+    }
+
+    #[tokio::test]
+    async fn get_data_missing_envelope_is_decode_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/budgets"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"nope": 1})))
+            .mount(&server)
+            .await;
+
+        let err = client(&server).get_budgets().await.unwrap_err();
+        assert!(matches!(err, crate::error::Error::Decode(_)));
     }
 }

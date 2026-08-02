@@ -6,6 +6,8 @@ pub enum Error {
     RateLimited,
     #[error("YNAB API error ({status}): {message}")]
     Api { status: u16, message: String },
+    #[error("unexpected API response: {0}")]
+    Decode(String),
     #[error("keychain error: {0}")]
     Keychain(#[from] keyring::Error),
     #[error("config error: {0}")]
