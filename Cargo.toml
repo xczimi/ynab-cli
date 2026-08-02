@@ -21,6 +21,9 @@ keyring = "3"
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
+toml = "0.8"
+directories = "6"
 
 [dev-dependencies]
 wiremock = "0.6"
+tempfile = "3"
