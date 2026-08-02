@@ -1,11 +1,16 @@
 pub mod auth;
+pub mod config_cmd;
 
 use clap::{Parser, Subcommand};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 #[derive(Debug, Parser)]
-#[command(name = "ynab", version, about = "Absolutely read-only CLI for the YNAB API")]
+#[command(
+    name = "ynab",
+    version,
+    about = "Absolutely read-only CLI for the YNAB API"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -54,6 +59,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 AuthCommand::Logout => auth::logout(&store),
             }
         }
-        Command::Config { .. } => Err(Error::Config("not implemented".into())),
+        Command::Config { command } => match command {
+            ConfigCommand::Get { key } => config_cmd::get(&key),
+            ConfigCommand::Set { key, value } => config_cmd::set(&key, &value),
+        },
     }
 }
