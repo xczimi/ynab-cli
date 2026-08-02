@@ -21,6 +21,7 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
+secrecy = "0.10"
 
 [dev-dependencies]
 wiremock = "0.6"
