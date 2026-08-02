@@ -33,7 +33,11 @@ mod tests {
             "rate limited by YNAB (200 requests/hour) — resets within the hour"
         );
         assert_eq!(
-            Error::Api { status: 500, message: "boom".into() }.to_string(),
+            Error::Api {
+                status: 500,
+                message: "boom".into()
+            }
+            .to_string(),
             "YNAB API error (500): boom"
         );
         assert_eq!(

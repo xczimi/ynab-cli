@@ -75,9 +75,15 @@ impl Config {
                 let parsed: bool = value
                     .parse()
                     .map_err(|_| Error::Config("cache must be true or false".into()))?;
-                Ok(Config { cache: Some(parsed), ..self })
+                Ok(Config {
+                    cache: Some(parsed),
+                    ..self
+                })
             }
-            "default_budget" => Ok(Config { default_budget: Some(value.to_string()), ..self }),
+            "default_budget" => Ok(Config {
+                default_budget: Some(value.to_string()),
+                ..self
+            }),
             _ => Err(Error::Config(format!(
                 "unknown key: {key} (valid keys: {})",
                 VALID_KEYS.join(", ")
@@ -101,7 +107,10 @@ mod tests {
     fn toml_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        let cfg = Config { cache: Some(false), default_budget: Some("b-1".into()) };
+        let cfg = Config {
+            cache: Some(false),
+            default_budget: Some("b-1".into()),
+        };
         cfg.save_to(&path).unwrap();
         let loaded = Config::load_from(&path).unwrap();
         assert_eq!(loaded.cache, Some(false));
@@ -122,7 +131,10 @@ mod tests {
         let cfg = cfg.with_key("cache", "false").unwrap();
         assert_eq!(cfg.get_key("cache").unwrap().as_deref(), Some("false"));
         let cfg = cfg.with_key("default_budget", "b-9").unwrap();
-        assert_eq!(cfg.get_key("default_budget").unwrap().as_deref(), Some("b-9"));
+        assert_eq!(
+            cfg.get_key("default_budget").unwrap().as_deref(),
+            Some("b-9")
+        );
 
         assert!(cfg.get_key("nope").is_err());
         assert!(cfg.clone().with_key("cache", "maybe").is_err());

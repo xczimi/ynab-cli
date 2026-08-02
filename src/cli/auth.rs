@@ -106,7 +106,9 @@ mod tests {
     #[tokio::test]
     async fn status_with_valid_token_succeeds() {
         let store = mock_store();
-        store.set(SecretKind::Pat, SecretString::from("tok")).unwrap();
+        store
+            .set(SecretKind::Pat, SecretString::from("tok"))
+            .unwrap();
         let server = user_ok_server().await;
         status(&store, Some(server.uri())).await.unwrap();
     }
@@ -140,7 +142,9 @@ mod tests {
     #[tokio::test]
     async fn logout_removes_token() {
         let store = mock_store();
-        store.set(SecretKind::Pat, SecretString::from("tok")).unwrap();
+        store
+            .set(SecretKind::Pat, SecretString::from("tok"))
+            .unwrap();
         logout(&store).unwrap();
         assert!(store.get(SecretKind::Pat).unwrap().is_none());
         // logout when already logged out is fine

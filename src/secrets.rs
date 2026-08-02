@@ -91,7 +91,9 @@ mod tests {
         let store = mock_store();
         assert!(store.get(SecretKind::Pat).unwrap().is_none());
 
-        store.set(SecretKind::Pat, SecretString::from("tok-123")).unwrap();
+        store
+            .set(SecretKind::Pat, SecretString::from("tok-123"))
+            .unwrap();
         let got = store.get(SecretKind::Pat).unwrap().unwrap();
         assert_eq!(got.expose_secret(), "tok-123");
 
@@ -105,8 +107,20 @@ mod tests {
     fn kinds_are_separate_entries() {
         let store = mock_store();
         store.set(SecretKind::Pat, SecretString::from("a")).unwrap();
-        store.set(SecretKind::CacheKey, SecretString::from("b")).unwrap();
-        assert_eq!(store.get(SecretKind::Pat).unwrap().unwrap().expose_secret(), "a");
-        assert_eq!(store.get(SecretKind::CacheKey).unwrap().unwrap().expose_secret(), "b");
+        store
+            .set(SecretKind::CacheKey, SecretString::from("b"))
+            .unwrap();
+        assert_eq!(
+            store.get(SecretKind::Pat).unwrap().unwrap().expose_secret(),
+            "a"
+        );
+        assert_eq!(
+            store
+                .get(SecretKind::CacheKey)
+                .unwrap()
+                .unwrap()
+                .expose_secret(),
+            "b"
+        );
     }
 }

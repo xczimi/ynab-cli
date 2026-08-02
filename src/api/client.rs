@@ -18,7 +18,11 @@ impl Client {
     }
 
     pub fn with_base_url(token: SecretString, base_url: String) -> Self {
-        Client { http: reqwest::Client::new(), base_url, token }
+        Client {
+            http: reqwest::Client::new(),
+            base_url,
+            token,
+        }
     }
 
     /// The ONLY http verb in this codebase is GET. Read-only is structural.
@@ -40,7 +44,10 @@ impl Client {
                     Ok(env) => env.error.detail,
                     Err(_) => s.canonical_reason().unwrap_or("unknown error").to_string(),
                 };
-                Err(Error::Api { status: s.as_u16(), message })
+                Err(Error::Api {
+                    status: s.as_u16(),
+                    message,
+                })
             }
         }
     }
