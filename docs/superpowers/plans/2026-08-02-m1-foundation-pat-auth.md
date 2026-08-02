@@ -1276,6 +1276,16 @@ git add -A && git commit -m "feat: ynab config get/set commands"
 
 ---
 
+## M1 carry-overs (from final review, 2026-08-02 — fold into later plans)
+
+- Prune unused scaffold deps (`oauth2` re-enters at M4; `chrono` when dates need it; `anyhow` likely never — crate standardized on `thiserror`).
+- Wrap token-reading intermediates in `zeroize::Zeroizing<String>` (crib cinnes-ynab-mcp pattern).
+- Decide env-hook placement convention before M4's MCP frontend duplicates `YNAB_CLI_API_BASE_URL` reading; add a comment either way.
+- Consider an `Error::Input` variant if more user-input errors appear (M2) — `no token provided` currently surfaces as `config error: ...`.
+- Add CI grep guard for write verbs (`! grep -RE '\.(post|put|patch|delete)\(' src/`) to make the read-only guarantee mechanical.
+- M3 decision: should `logout` also clear the cache encryption key / cache contents? (Today it deliberately preserves `SecretKind::CacheKey`.)
+- Design note: `SecretStore` entries array order is tied to `SecretKind` discriminant order (comment + test enforced); revisit if M4 touches `SecretKind`.
+
 ## Roadmap after M1 (each gets its own plan at its checkpoint)
 
 - **M2 — Client + list commands:** domain types (Budget, Account, Category, Payee, Transaction; milliunits, ISO dates), remaining GET endpoints, table/`--json` output layer, `budgets|accounts|categories|payees|transactions list` with `--budget` resolution (flag → config `default_budget` → `last-used`), `--since`/`--until` via API `since_date` + client-side filters (in-memory until M3).
