@@ -24,6 +24,7 @@ anyhow = "1"
 secrecy = "0.10"
 toml = "0.8"
 directories = "6"
+rpassword = "7"
 
 [dev-dependencies]
 wiremock = "0.6"

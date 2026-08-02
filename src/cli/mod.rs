@@ -1,3 +1,5 @@
+pub mod auth;
+
 use clap::{Parser, Subcommand};
 
 use crate::error::{Error, Result};
@@ -43,7 +45,15 @@ pub enum ConfigCommand {
 
 pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
-        Command::Auth { .. } => Err(Error::Config("not implemented".into())),
+        Command::Auth { command } => {
+            let store = crate::secrets::SecretStore::new()?;
+            let base = std::env::var("YNAB_CLI_API_BASE_URL").ok();
+            match command {
+                AuthCommand::Login => auth::login(&store, base).await,
+                AuthCommand::Status => auth::status(&store, base).await,
+                AuthCommand::Logout => auth::logout(&store),
+            }
+        }
         Command::Config { .. } => Err(Error::Config("not implemented".into())),
     }
 }
