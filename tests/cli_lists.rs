@@ -46,3 +46,57 @@ async fn budgets_list_renders_table_and_json() {
     .await
     .unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn transactions_list_filters_and_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/budgets/last-used/transactions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "transactions": [
+                { "id": "t-1", "date": "2026-07-15", "amount": -12340,
+                  "memo": "weekly shop", "approved": true,
+                  "account_id": "a-1", "account_name": "Chequing",
+                  "payee_id": "p-1", "payee_name": "Corner Grocer",
+                  "category_id": "c-1", "category_name": "Groceries",
+                  "deleted": false, "subtransactions": [] },
+                { "id": "t-2", "date": "2026-07-20", "amount": -5000,
+                  "memo": null, "approved": false,
+                  "account_id": "a-1", "account_name": "Chequing",
+                  "payee_id": null, "payee_name": "Mystery",
+                  "category_id": null, "category_name": null,
+                  "deleted": false, "subtransactions": [] }
+            ], "server_knowledge": 9 }
+        })))
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    tokio::task::spawn_blocking(move || {
+        let dir = tempfile::tempdir().unwrap();
+        // human: uncategorized filter keeps only t-2, shows currency
+        ynab(dir.path(), &uri)
+            .args(["transactions", "list", "--uncategorized"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Mystery"))
+            .stdout(predicate::str::contains("-5.00"))
+            .stdout(predicate::str::contains("Corner Grocer").not());
+        // json: filtered raw array preserves unknown fields (subtransactions)
+        ynab(dir.path(), &uri)
+            .args(["transactions", "list", "--uncategorized", "--json"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("\"t-2\""))
+            .stdout(predicate::str::contains("subtransactions"))
+            .stdout(predicate::str::contains("\"t-1\"").not());
+        // bad date errors cleanly
+        ynab(dir.path(), &uri)
+            .args(["transactions", "list", "--since", "yesterday"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("ISO date"));
+    })
+    .await
+    .unwrap();
+}
