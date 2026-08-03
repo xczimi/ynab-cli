@@ -2,8 +2,8 @@ use reqwest::StatusCode;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::api::types::{
-    AccountsWrapper, BudgetsWrapper, CategoryGroupsWrapper, DataEnvelope, ErrorEnvelope, PayeesWrapper,
-    TransactionsWrapper, User, UserWrapper,
+    AccountsWrapper, BudgetsWrapper, CategoryGroupsWrapper, DataEnvelope, ErrorEnvelope,
+    PayeesWrapper, TransactionsWrapper, User, UserWrapper,
 };
 use crate::error::{Error, Result};
 
@@ -77,8 +77,8 @@ impl Client {
             .get("data")
             .cloned()
             .ok_or_else(|| Error::Decode("missing data envelope".into()))?;
-        let parsed = serde_json::from_value(raw.clone())
-            .map_err(|e| Error::Decode(e.to_string()))?;
+        let parsed =
+            serde_json::from_value(raw.clone()).map_err(|e| Error::Decode(e.to_string()))?;
         Ok(ListResult { raw, parsed })
     }
 
@@ -90,11 +90,9 @@ impl Client {
         self.get_data(&format!("/budgets/{budget}/accounts")).await
     }
 
-    pub async fn get_categories(
-        &self,
-        budget: &str,
-    ) -> Result<ListResult<CategoryGroupsWrapper>> {
-        self.get_data(&format!("/budgets/{budget}/categories")).await
+    pub async fn get_categories(&self, budget: &str) -> Result<ListResult<CategoryGroupsWrapper>> {
+        self.get_data(&format!("/budgets/{budget}/categories"))
+            .await
     }
 
     pub async fn get_payees(&self, budget: &str) -> Result<ListResult<PayeesWrapper>> {

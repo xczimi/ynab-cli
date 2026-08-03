@@ -1,4 +1,4 @@
-use comfy_table::{presets, Table};
+use comfy_table::{Table, presets};
 
 /// Milliunits → currency string: divide by 1000, 2 decimals,
 /// round half away from zero, outflows keep their minus sign.
