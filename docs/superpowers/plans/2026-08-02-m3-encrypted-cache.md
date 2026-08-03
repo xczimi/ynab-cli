@@ -1171,6 +1171,14 @@ pub fn clear() -> Result<()> {
 
 ---
 
+## M3 carry-overs (from final review, 2026-08-02 — fold into M4 or later)
+
+- Validate `YNAB_CLI_CACHE_KEY` as 64 hex chars (non-hex silently shifts SQLCipher into passphrase/KDF mode) or document the fallback.
+- `envelope()` fabricates `"server_knowledge": 0` when absent — consider omitting the key instead (strict mirror).
+- Fresh-install UX: with no `default_budget`, budget resolves to `last-used` so caching never engages — README (M4) must say "set default_budget to get caching"; consider a one-line hint in `cache status`.
+- `cache clear` now swallows ALL removal errors (not just missing-file) — pre-existing-pattern-consistent but worth a maintainer nod.
+- M4 MCP notes from the reviewer: rusqlite Connection is Send-not-Sync — a long-lived `mcp serve` needs `&mut` discipline or a mutex around the cache handle (current signatures anticipate this); consider incremental envelope reconstruction if per-tool-call sync cost matters; resolve the parked logout-vs-CacheKey question; zeroize polish for key transit through format! strings.
+
 ## Carry-overs still parked (not this plan)
 
 - M2 list: budget-id URL encoding/validation; accounts-list e2e; global-flag help polish; zeroize; `Error::Input`; CI write-verb grep. The env-sensitive `token_prefers_keychain_when_no_env` test can now be fixed cheaply with `temp-env` (added in Task 1) — allowed as a drive-by in Task 4 if the implementer has it in scope, else it stays parked.
