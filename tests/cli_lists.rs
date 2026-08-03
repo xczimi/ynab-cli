@@ -83,13 +83,15 @@ async fn transactions_list_filters_and_json() {
             .stdout(predicate::str::contains("-5.00"))
             .stdout(predicate::str::contains("Corner Grocer").not());
         // json: filtered raw array preserves unknown fields (subtransactions)
+        // and the envelope (server_knowledge) sibling to "transactions"
         ynab(dir.path(), &uri)
             .args(["transactions", "list", "--uncategorized", "--json"])
             .assert()
             .success()
             .stdout(predicate::str::contains("\"t-2\""))
             .stdout(predicate::str::contains("subtransactions"))
-            .stdout(predicate::str::contains("\"t-1\"").not());
+            .stdout(predicate::str::contains("\"t-1\"").not())
+            .stdout(predicate::str::contains("server_knowledge"));
         // bad date errors cleanly
         ynab(dir.path(), &uri)
             .args(["transactions", "list", "--since", "yesterday"])

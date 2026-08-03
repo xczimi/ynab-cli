@@ -14,9 +14,9 @@ pub struct Filters {
     pub unapproved: bool,
 }
 
-pub(crate) fn validate_date(value: &str, flag: &str) -> Result<()> {
+pub(crate) fn normalize_date(value: &str, flag: &str) -> Result<String> {
     chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
-        .map(|_| ())
+        .map(|parsed| parsed.format("%Y-%m-%d").to_string())
         .map_err(|_| Error::Config(format!("{flag} must be an ISO date (YYYY-MM-DD)")))
 }
 
@@ -29,9 +29,10 @@ fn name_or_id(filter: &str, id: Option<&str>, name: Option<&str>) -> bool {
 }
 
 pub(crate) fn keep(t: &Transaction, f: &Filters) -> bool {
-    if t.deleted {
-        return false;
-    }
+    !t.deleted && matches_filters(t, f)
+}
+
+fn matches_filters(t: &Transaction, f: &Filters) -> bool {
     if let Some(until) = &f.until
         && t.date.as_str() > until.as_str()
     {
@@ -73,16 +74,48 @@ fn truncate_memo(memo: &Option<String>) -> String {
 }
 
 pub async fn list(ctx: &Ctx, filters: Filters) -> Result<()> {
-    if let Some(s) = &filters.since {
-        validate_date(s, "--since")?;
-    }
-    if let Some(u) = &filters.until {
-        validate_date(u, "--until")?;
-    }
+    let since = filters
+        .since
+        .as_deref()
+        .map(|s| normalize_date(s, "--since"))
+        .transpose()?;
+    let until = filters
+        .until
+        .as_deref()
+        .map(|u| normalize_date(u, "--until"))
+        .transpose()?;
+    let filters = Filters {
+        since,
+        until,
+        ..filters
+    };
+
     let result = ctx
         .client
         .get_transactions(&ctx.budget, filters.since.as_deref())
         .await?;
+
+    if ctx.json {
+        let matches: Vec<bool> = result
+            .parsed
+            .transactions
+            .iter()
+            .map(|t| matches_filters(t, &filters))
+            .collect();
+        let raw_kept: Vec<serde_json::Value> = result.raw["transactions"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .zip(matches.iter())
+                    .filter(|(_, k)| **k)
+                    .map(|(v, _)| v.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut envelope = result.raw.clone();
+        envelope["transactions"] = serde_json::Value::Array(raw_kept);
+        return output::print_json(&envelope);
+    }
 
     let kept: Vec<bool> = result
         .parsed
@@ -90,20 +123,6 @@ pub async fn list(ctx: &Ctx, filters: Filters) -> Result<()> {
         .iter()
         .map(|t| keep(t, &filters))
         .collect();
-
-    if ctx.json {
-        let raw_kept: Vec<serde_json::Value> = result.raw["transactions"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .zip(kept.iter())
-                    .filter(|(_, k)| **k)
-                    .map(|(v, _)| v.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        return output::print_json(&serde_json::json!({ "transactions": raw_kept }));
-    }
 
     let rows = result
         .parsed
@@ -219,11 +238,21 @@ mod tests {
 
     #[test]
     fn date_validation() {
-        assert!(validate_date("2026-07-01", "--since").is_ok());
-        let err = validate_date("07/01/2026", "--since").unwrap_err();
+        assert!(normalize_date("2026-07-01", "--since").is_ok());
+        let err = normalize_date("07/01/2026", "--since").unwrap_err();
         assert_eq!(
             err.to_string(),
             "config error: --since must be an ISO date (YYYY-MM-DD)"
         );
+        assert_eq!(normalize_date("2026-7-1", "--since").unwrap(), "2026-07-01");
+    }
+
+    #[test]
+    fn deleted_fails_keep_but_passes_matches_filters() {
+        let f = Filters::default();
+        let mut dead = tx();
+        dead.deleted = true;
+        assert!(!keep(&dead, &f));
+        assert!(matches_filters(&dead, &f));
     }
 }

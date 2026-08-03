@@ -94,6 +94,10 @@ pub enum PayeesCommand {
 #[derive(Debug, Subcommand)]
 pub enum TransactionsCommand {
     /// List transactions (filters combine with AND)
+    ///
+    /// `--json` applies the explicit filters given above but keeps deleted
+    /// transactions and preserves the full response envelope (e.g.
+    /// `server_knowledge`).
     List {
         /// Only transactions on or after this ISO date (sent to the API)
         #[arg(long, value_name = "YYYY-MM-DD")]
