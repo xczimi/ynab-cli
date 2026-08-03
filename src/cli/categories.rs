@@ -3,7 +3,7 @@ use crate::error::Result;
 use crate::output;
 
 pub async fn list(ctx: &Ctx) -> Result<()> {
-    let result = ctx.client.get_categories(&ctx.budget).await?;
+    let result = ctx.client.get_categories(&ctx.budget, None).await?;
     if ctx.json {
         return output::print_json(&result.raw);
     }

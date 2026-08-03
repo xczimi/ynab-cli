@@ -92,7 +92,7 @@ pub async fn list(ctx: &Ctx, filters: Filters) -> Result<()> {
 
     let result = ctx
         .client
-        .get_transactions(&ctx.budget, filters.since.as_deref())
+        .get_transactions(&ctx.budget, filters.since.as_deref(), None)
         .await?;
 
     if ctx.json {
