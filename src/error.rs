@@ -22,6 +22,14 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// True for `Error::Cache` — a corrupted/undecryptable cache is never a
+/// user-facing error (CLAUDE.md). Budget-scoped list commands use this to
+/// fall back to a direct API fetch when the sync path fails mid-operation,
+/// instead of propagating the error to the user.
+pub fn cache_error(e: &Error) -> bool {
+    matches!(e, Error::Cache(_))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -48,5 +56,13 @@ mod tests {
             Error::Config("bad key".into()).to_string(),
             "config error: bad key"
         );
+    }
+
+    #[test]
+    fn cache_error_matches_only_cache_variant() {
+        assert!(cache_error(&Error::Cache("boom".into())));
+        assert!(!cache_error(&Error::NotAuthenticated));
+        assert!(!cache_error(&Error::RateLimited));
+        assert!(!cache_error(&Error::Config("x".into())));
     }
 }

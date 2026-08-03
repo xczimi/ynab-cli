@@ -15,7 +15,27 @@ pub fn status(json: bool) -> Result<()> {
         return Ok(());
     }
     let size = std::fs::metadata(&path)?.len();
-    let cache = Cache::open(&SecretStore::new()?)?;
+
+    // `open_readonly_probe` never deletes or otherwise modifies the file —
+    // `cache status` must stay strictly read-only (CLAUDE.md / M3 review
+    // finding 1). A corrupt/undecryptable cache is reported, not repaired.
+    let cache = match Cache::open_readonly_probe(&SecretStore::new()?, &path)? {
+        Some(cache) => cache,
+        None => {
+            if json {
+                return output::print_json(&serde_json::json!({
+                    "path": path.display().to_string(),
+                    "exists": true,
+                    "readable": false
+                }));
+            }
+            println!(
+                "Cache: unreadable, will be rebuilt on next use ({})",
+                path.display()
+            );
+            return Ok(());
+        }
+    };
     let rows = cache.status_rows()?;
     if json {
         let resources: Vec<serde_json::Value> = rows
@@ -49,9 +69,7 @@ pub fn status(json: bool) -> Result<()> {
 
 pub fn clear() -> Result<()> {
     let path = Cache::db_path()?;
-    if path.exists() {
-        std::fs::remove_file(&path)?;
-    }
+    crate::cache::remove_db_and_siblings(&path);
     println!("Cache cleared.");
     Ok(())
 }
@@ -104,5 +122,29 @@ mod tests {
                 assert!(result.is_ok());
             },
         );
+    }
+
+    #[test]
+    fn status_reports_unreadable_cache_without_deleting_it() {
+        let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
+        let _store = mock_store();
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+        let db_path = data_dir.join("cache.db");
+        let garbage = b"not a real database".to_vec();
+        std::fs::write(&db_path, &garbage).unwrap();
+
+        temp_env::with_var(
+            "YNAB_CLI_DATA_DIR",
+            Some(data_dir.to_string_lossy().to_string()),
+            || {
+                let result = status(false);
+                assert!(result.is_ok());
+            },
+        );
+
+        // Read-only probe must never discard the unreadable file.
+        assert!(db_path.exists());
+        assert_eq!(std::fs::read(&db_path).unwrap(), garbage);
     }
 }

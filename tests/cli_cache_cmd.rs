@@ -7,6 +7,7 @@ fn ynab(config_dir: &std::path::Path, data_dir: &std::path::Path, base_url: &str
     cmd.env("YNAB_CLI_DATA_DIR", data_dir);
     cmd.env("YNAB_CLI_API_BASE_URL", base_url);
     cmd.env("YNAB_PAT", "e2e-token");
+    cmd.env("YNAB_CLI_CACHE_KEY", "ab".repeat(32));
     cmd
 }
 

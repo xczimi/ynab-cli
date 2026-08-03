@@ -1,5 +1,5 @@
 use crate::cli::context::Ctx;
-use crate::error::Result;
+use crate::error::{Result, cache_error};
 use crate::output;
 
 pub async fn list(ctx: &mut Ctx) -> Result<()> {
@@ -9,8 +9,15 @@ pub async fn list(ctx: &mut Ctx) -> Result<()> {
         budget,
         json,
     } = ctx;
+    // A corrupted cache is never a user-facing error (CLAUDE.md): if the
+    // sync path fails mid-operation, fall back to the same direct fetch the
+    // no-cache arm uses.
     let result = match cache {
-        Some(cache) => crate::cache::sync::categories(client, cache, budget).await?,
+        Some(cache) => match crate::cache::sync::categories(client, cache, budget).await {
+            Ok(result) => result,
+            Err(e) if cache_error(&e) => client.get_categories(budget, None).await?,
+            Err(e) => return Err(e),
+        },
         None => client.get_categories(budget, None).await?,
     };
     if *json {

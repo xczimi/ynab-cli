@@ -13,6 +13,18 @@ pub struct Cache {
     conn: Connection,
 }
 
+/// Removes the db file and its SQLite/SQLCipher siblings (`-journal`,
+/// `-wal`, `-shm`). Missing files are not an error — used both when
+/// discarding a corrupt cache (`Cache::open_at`) and by `ynab cache clear`.
+pub(crate) fn remove_db_and_siblings(path: &Path) {
+    let _ = std::fs::remove_file(path);
+    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+    for suffix in ["-journal", "-wal", "-shm"] {
+        let sibling = path.with_file_name(format!("{file_name}{suffix}"));
+        let _ = std::fs::remove_file(sibling);
+    }
+}
+
 impl Cache {
     pub fn data_dir() -> Result<PathBuf> {
         if let Ok(dir) = std::env::var("YNAB_CLI_DATA_DIR") {
@@ -39,11 +51,35 @@ impl Cache {
         match Self::try_open(path, &key) {
             Ok(conn) => Ok(Cache { conn }),
             Err(_) => {
-                let _ = std::fs::remove_file(path);
+                remove_db_and_siblings(path);
                 let conn = Self::try_open(path, &key).map_err(|e| Error::Cache(e.to_string()))?;
                 Ok(Cache { conn })
             }
         }
+    }
+
+    /// Attempts to open the cache exactly once, without discarding or
+    /// otherwise modifying a corrupt/undecryptable file — used by
+    /// `ynab cache status`, which must stay read-only (CLAUDE.md). Returns
+    /// `Ok(None)` when the file cannot be opened or decrypted; the caller
+    /// tells the user it will be rebuilt on next use.
+    pub fn open_readonly_probe(store: &SecretStore, path: &Path) -> Result<Option<Cache>> {
+        let key = Self::resolve_key(store)?;
+        match Self::try_open_readonly(path, &key) {
+            Ok(conn) => Ok(Some(Cache { conn })),
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Opens read-only (no file creation, no writes) and forces a read to
+    /// confirm the key actually decrypts the file, without ever mutating it.
+    fn try_open_readonly(path: &Path, key: &SecretString) -> rusqlite::Result<Connection> {
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.pragma_update(None, "key", format!("x'{}'", key.expose_secret()))?;
+        conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| {
+            row.get::<_, i64>(0)
+        })?;
+        Ok(conn)
     }
 
     fn try_open(path: &Path, key: &SecretString) -> rusqlite::Result<Connection> {
@@ -190,6 +226,39 @@ pub mod tests {
         let other_store = mock_store();
         let cache = Cache::open_at(&other_store, &path).unwrap();
         assert_eq!(cache.server_knowledge("b-1", "accounts").unwrap(), None);
+    }
+
+    #[test]
+    fn open_readonly_probe_returns_none_without_deleting() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let store = mock_store();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.db");
+        let garbage = b"this is not a database".to_vec();
+        std::fs::write(&path, &garbage).unwrap();
+
+        let probe = Cache::open_readonly_probe(&store, &path).unwrap();
+
+        assert!(probe.is_none());
+        assert!(path.exists());
+        assert_eq!(std::fs::read(&path).unwrap(), garbage);
+    }
+
+    #[test]
+    fn open_readonly_probe_returns_some_for_valid_cache() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let store = mock_store();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.db");
+        {
+            let cache = Cache::open_at(&store, &path).unwrap();
+            cache.set_server_knowledge("b-1", "accounts", 5).unwrap();
+        }
+
+        let probe = Cache::open_readonly_probe(&store, &path).unwrap();
+
+        let cache = probe.expect("valid cache should probe as readable");
+        assert_eq!(cache.server_knowledge("b-1", "accounts").unwrap(), Some(5));
     }
 
     #[test]
