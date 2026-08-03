@@ -1415,6 +1415,15 @@ git add -A && git commit -m "feat: transactions list with client-side filters"
 
 ---
 
+## M2 carry-overs (from final review, 2026-08-02 — fold into later plans)
+
+- Document `YNAB_PAT` in CLAUDE.md/README once the user confirms it at the checkpoint (implemented + tested, not yet user-facing-documented).
+- Budget id is interpolated raw into URL paths — add percent-encoding or an early "must be a UUID or 'last-used'" validation for cleaner errors (M3 touches budget refs anyway).
+- Add one cheap `accounts list` e2e with a deleted-category-in-live-group payload (closes two coverage gaps at once).
+- `--json`/`--budget` globals appear in `auth`/`config` help where they're ignored — cosmetic clap polish, someday.
+- `token_prefers_keychain_when_no_env` unit test fails if the dev shell exports YNAB_PAT — guard or scope it.
+- DRY on the five list commands: deliberately NOT refactored (28-72 lines each, shared logic already extracted); revisit after M3 reshapes them.
+
 ## Carry-overs NOT in this plan (deliberate)
 
 - Unused-dep pruning (`oauth2`, `anyhow`) waits for M4 (oauth2 becomes used; anyhow decision then).
