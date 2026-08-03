@@ -74,6 +74,11 @@ pub enum Command {
         #[command(subcommand)]
         command: CacheCommand,
     },
+    /// Run the MCP server
+    Mcp {
+        #[command(subcommand)]
+        command: McpCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -158,6 +163,12 @@ pub enum CacheCommand {
     Clear,
 }
 
+#[derive(Debug, Subcommand)]
+pub enum McpCommand {
+    /// Serve the MCP server over stdio until the client disconnects
+    Serve,
+}
+
 pub async fn run(cli: Cli) -> Result<()> {
     let json = cli.json;
     let budget = cli.budget.clone();
@@ -229,6 +240,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Cache { command } => match command {
             CacheCommand::Status => cache_cmd::status(json),
             CacheCommand::Clear => cache_cmd::clear(),
+        },
+        Command::Mcp { command } => match command {
+            McpCommand::Serve => crate::mcp::serve().await,
         },
     }
 }

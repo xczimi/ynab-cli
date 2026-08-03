@@ -1,4 +1,5 @@
-use crate::api::types::Transaction;
+use crate::api::client::ListResult;
+use crate::api::types::{Transaction, TransactionsWrapper};
 use crate::cli::context::Ctx;
 use crate::error::{Error, Result, cache_error};
 use crate::output;
@@ -67,6 +68,37 @@ fn matches_filters(t: &Transaction, f: &Filters) -> bool {
     true
 }
 
+/// Applies filters to the raw transactions envelope, keeping the full
+/// response shape (e.g. `server_knowledge`) and any unknown fields per
+/// transaction. Unlike `keep`, deleted transactions are NOT dropped here —
+/// `--json` semantics only apply the explicit filters given, deleted stays.
+/// Shared by the CLI's `--json` output and the MCP `list_transactions` tool
+/// so both frontends apply identical filtering semantics.
+pub(crate) fn filtered_raw_transactions(
+    result: &ListResult<TransactionsWrapper>,
+    filters: &Filters,
+) -> serde_json::Value {
+    let matches: Vec<bool> = result
+        .parsed
+        .transactions
+        .iter()
+        .map(|t| matches_filters(t, filters))
+        .collect();
+    let raw_kept: Vec<serde_json::Value> = result.raw["transactions"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .zip(matches.iter())
+                .filter(|(_, k)| **k)
+                .map(|(v, _)| v.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut envelope = result.raw.clone();
+    envelope["transactions"] = serde_json::Value::Array(raw_kept);
+    envelope
+}
+
 fn truncate_memo(memo: &Option<String>) -> String {
     match memo {
         None => "-".to_string(),
@@ -122,24 +154,7 @@ pub async fn list(ctx: &mut Ctx, filters: Filters) -> Result<()> {
     };
 
     if *json {
-        let matches: Vec<bool> = result
-            .parsed
-            .transactions
-            .iter()
-            .map(|t| matches_filters(t, &filters))
-            .collect();
-        let raw_kept: Vec<serde_json::Value> = result.raw["transactions"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .zip(matches.iter())
-                    .filter(|(_, k)| **k)
-                    .map(|(v, _)| v.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut envelope = result.raw.clone();
-        envelope["transactions"] = serde_json::Value::Array(raw_kept);
+        let envelope = filtered_raw_transactions(&result, &filters);
         return output::print_json(&envelope);
     }
 
