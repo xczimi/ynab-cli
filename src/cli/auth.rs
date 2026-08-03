@@ -1,6 +1,7 @@
 use std::io::{BufRead, IsTerminal};
 
 use secrecy::{ExposeSecret, SecretString};
+use zeroize::Zeroizing;
 
 use crate::api::client::Client;
 use crate::cache::Cache;
@@ -15,10 +16,12 @@ fn make_client(token: SecretString, base_url: Option<String>) -> Client {
 }
 
 fn read_token() -> Result<SecretString> {
-    let raw = if std::io::stdin().is_terminal() {
-        rpassword::prompt_password("Paste your YNAB Personal Access Token: ")?
+    let raw: Zeroizing<String> = if std::io::stdin().is_terminal() {
+        Zeroizing::new(rpassword::prompt_password(
+            "Paste your YNAB Personal Access Token: ",
+        )?)
     } else {
-        let mut line = String::new();
+        let mut line = Zeroizing::new(String::new());
         std::io::stdin().lock().read_line(&mut line)?;
         line
     };

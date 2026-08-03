@@ -257,9 +257,17 @@ async fn fetch_transactions(
 ///   is mapped to a clean shutdown; every other `ServerInitializeError`
 ///   variant (malformed handshake, unsupported protocol version, ...) stays
 ///   a hard error.
-/// - stdin closes after a real session (`RunningService::waiting` resolves
-///   `Ok(QuitReason::Closed)`; its `Err` arm is only a tokio `JoinError`
-///   from a panicked server task, not transport closure).
+/// - stdin closes after a real session. `RunningService::waiting` returns
+///   `Result<QuitReason, tokio::task::JoinError>`: the outer `Err` is a
+///   `JoinError` from awaiting the service's own join handle (extremely
+///   rare — the runtime itself misbehaving). The inner `QuitReason` (per
+///   rmcp 3.1.0's `service.rs`) is `#[non_exhaustive]` with `Closed` and
+///   `Cancelled` as clean-quit variants, but ALSO a `JoinError(JoinError)`
+///   variant: the service loop's own task-driving code catches a panicked
+///   handler task and returns it as `Ok(QuitReason::JoinError(e))`, not as
+///   the outer `Err`. Treating every `Ok(_)` as success (the prior
+///   behaviour) silently exits 0 on a handler panic; a caller relying on
+///   the exit code to detect a crashed MCP server would never notice.
 pub async fn serve() -> crate::error::Result<()> {
     let service = match YnabServer::new().serve(rmcp::transport::stdio()).await {
         Ok(service) => service,
@@ -270,11 +278,19 @@ pub async fn serve() -> crate::error::Result<()> {
             )));
         }
     };
-    service
-        .waiting()
-        .await
-        .map_err(|e| crate::error::Error::Config(format!("mcp server error: {e}")))?;
-    Ok(())
+    match service.waiting().await {
+        Ok(rmcp::service::QuitReason::Closed) | Ok(rmcp::service::QuitReason::Cancelled) => Ok(()),
+        Ok(rmcp::service::QuitReason::JoinError(e)) => Err(crate::error::Error::Config(format!(
+            "MCP server task failed: {e}"
+        ))),
+        // `QuitReason` is `#[non_exhaustive]`: treat any variant rmcp adds
+        // later as a clean quit rather than failing closed on an unknown
+        // shutdown reason.
+        Ok(_) => Ok(()),
+        Err(e) => Err(crate::error::Error::Config(format!(
+            "mcp server error: {e}"
+        ))),
+    }
 }
 
 // `TEST_LOCK` (a plain `std::sync::Mutex`, defined in `crate::cache`) is held

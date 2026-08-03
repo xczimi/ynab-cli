@@ -13,6 +13,7 @@ use oauth2::{
     RedirectUrl, RefreshToken, Scope, TokenResponse, TokenUrl,
 };
 use secrecy::{ExposeSecret, SecretString};
+use zeroize::Zeroizing;
 
 use crate::auth::{listener, unix_now};
 use crate::error::{Error, Result};
@@ -90,14 +91,17 @@ fn http_client() -> Result<reqwest::Client> {
 }
 
 fn read_client_id() -> Result<String> {
-    let raw = if std::io::stdin().is_terminal() {
+    // `client_id` isn't secret, but the read buffer is wrapped in
+    // `Zeroizing` anyway: it keeps this function's shape identical to
+    // `read_client_secret` and `read_token`, and costs nothing.
+    let raw: Zeroizing<String> = if std::io::stdin().is_terminal() {
         print!("YNAB OAuth client ID: ");
         std::io::stdout().flush()?;
-        let mut line = String::new();
+        let mut line = Zeroizing::new(String::new());
         std::io::stdin().lock().read_line(&mut line)?;
         line
     } else {
-        let mut line = String::new();
+        let mut line = Zeroizing::new(String::new());
         std::io::stdin().lock().read_line(&mut line)?;
         line
     };
@@ -109,10 +113,10 @@ fn read_client_id() -> Result<String> {
 }
 
 fn read_client_secret() -> Result<SecretString> {
-    let raw = if std::io::stdin().is_terminal() {
-        rpassword::prompt_password("YNAB OAuth client secret: ")?
+    let raw: Zeroizing<String> = if std::io::stdin().is_terminal() {
+        Zeroizing::new(rpassword::prompt_password("YNAB OAuth client secret: ")?)
     } else {
-        let mut line = String::new();
+        let mut line = Zeroizing::new(String::new());
         std::io::stdin().lock().read_line(&mut line)?;
         line
     };

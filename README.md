@@ -7,13 +7,16 @@ AI agents. Rust, single binary (`ynab`).
 ## Read-only, structurally
 
 This CLI cannot write to your budget, and that's not a policy — it's a
-property of the code. The API client (`src/api/client.rs`) contains exactly
-one HTTP verb, GET, and no other file in the codebase talks to the network;
-"this binary cannot mutate your budget" is verifiable by reading that one
-file rather than trusting a promise. On top of that, the OAuth login flow
-always requests `scope=read-only`, so even if a bug somehow slipped a write
-call in, YNAB's own servers would reject it. If write support is ever
-wanted, it will live in a separate tool — never in `ynab-cli`.
+property of the code. The YNAB *data* API client (`src/api/client.rs`)
+contains exactly one HTTP verb, GET, so "this binary cannot mutate your
+budget" is verifiable by reading that one file rather than trusting a
+promise. The single exception is the OAuth token exchange in
+`src/auth/oauth.rs` — a POST to `app.ynab.com/oauth/token`, performed inside
+the `oauth2` crate, that only trades an authorization or refresh code for an
+access token and can never touch budget data — and it always requests
+`scope=read-only`, so even a bug in this CLI couldn't make YNAB's own
+servers accept a write. If write support is ever wanted, it will live in a
+separate tool — never in `ynab-cli`.
 
 ## Install
 
@@ -151,6 +154,8 @@ silently discarded and rebuilt on the next call.
 | `YNAB_CLI_DATA_DIR` | Override the data directory (cache location). |
 | `YNAB_CLI_CACHE_KEY` | Supply the cache's SQLCipher key directly instead of using the keychain — must be exactly 64 hex characters (32 bytes). |
 | `YNAB_CLI_NO_BROWSER` | Skip the best-effort browser open during `auth login --oauth`; the authorization URL is always printed regardless. |
+| `YNAB_CLI_OAUTH_BASE_URL` | Override the OAuth authorize/token endpoint base URL (tests / self-hosted mocks). |
+| `YNAB_CLI_OAUTH_PORT` | Override the localhost redirect port used to catch the OAuth authorization code (tests). |
 
 ## MCP setup
 
