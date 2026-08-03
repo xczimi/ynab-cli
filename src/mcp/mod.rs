@@ -378,7 +378,9 @@ mod tests {
         let _store = mock_store();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/budgets/b-9/accounts"))
+            .and(path(
+                "/budgets/99999999-9999-9999-9999-999999999999/accounts",
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": { "accounts": [
                     { "id": "a-1", "name": "Chequing", "type": "checking",
@@ -393,7 +395,7 @@ mod tests {
         let result = with_env(&uri, || async {
             YnabServer::new()
                 .list_accounts(Parameters(BudgetScopedParams {
-                    budget_id: Some("b-9".into()),
+                    budget_id: Some("99999999-9999-9999-9999-999999999999".into()),
                 }))
                 .await
                 .unwrap()
@@ -411,7 +413,9 @@ mod tests {
         let _store = mock_store();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/budgets/b-1/categories"))
+            .and(path(
+                "/budgets/11111111-1111-1111-1111-111111111111/categories",
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": { "category_groups": [
                     { "id": "g-1", "name": "Bills", "hidden": false, "deleted": false,
@@ -425,7 +429,7 @@ mod tests {
         let result = with_env(&uri, || async {
             YnabServer::new()
                 .list_categories(Parameters(BudgetScopedParams {
-                    budget_id: Some("b-1".into()),
+                    budget_id: Some("11111111-1111-1111-1111-111111111111".into()),
                 }))
                 .await
                 .unwrap()
@@ -442,7 +446,7 @@ mod tests {
         let _store = mock_store();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/budgets/b-1/payees"))
+            .and(path("/budgets/11111111-1111-1111-1111-111111111111/payees"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": { "payees": [
                     { "id": "p-1", "name": "Grocer", "deleted": false }
@@ -455,7 +459,7 @@ mod tests {
         let result = with_env(&uri, || async {
             YnabServer::new()
                 .list_payees(Parameters(BudgetScopedParams {
-                    budget_id: Some("b-1".into()),
+                    budget_id: Some("11111111-1111-1111-1111-111111111111".into()),
                 }))
                 .await
                 .unwrap()
@@ -472,7 +476,9 @@ mod tests {
         let _store = mock_store();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/budgets/b-1/transactions"))
+            .and(path(
+                "/budgets/11111111-1111-1111-1111-111111111111/transactions",
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": { "transactions": [
                     { "id": "t-1", "date": "2026-07-15", "amount": -12340,
@@ -496,7 +502,7 @@ mod tests {
         let result = with_env(&uri, || async {
             YnabServer::new()
                 .list_transactions(Parameters(ListTransactionsParams {
-                    budget_id: Some("b-1".into()),
+                    budget_id: Some("11111111-1111-1111-1111-111111111111".into()),
                     uncategorized: true,
                     ..Default::default()
                 }))
@@ -564,7 +570,10 @@ mod tests {
         }
 
         let text = error_text(&result);
-        assert_eq!(text, "not logged in — run `ynab auth login`");
+        assert_eq!(
+            text,
+            "not logged in — run `ynab auth login` (or `ynab auth login --oauth`)"
+        );
         assert!(!text.contains("token"));
     }
 }
