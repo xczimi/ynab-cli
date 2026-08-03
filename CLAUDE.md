@@ -36,6 +36,10 @@ One binary, three layers:
 - `ynab auth login|status|logout`. PAT paste-in implemented first (unblocks
   everything else); OAuth Authorization Code flow immediately after — both are
   v1 scope.
+- Token resolution (decided 2026-08-02): `YNAB_PAT` env var (read-only
+  consumption, for CI/scripts/e2e tests) → keychain. Tokens are never
+  *stored* anywhere but the keychain. Test hooks: `YNAB_CLI_API_BASE_URL`,
+  `YNAB_CLI_CONFIG_DIR` env vars (CLI frontend concern).
 - **Bring-your-own OAuth app**: every user registers their own OAuth app on
   their YNAB developer page (~2 min) and hands the CLI its
   `client_id`/`client_secret` once; stored in keychain. No shared app, no
