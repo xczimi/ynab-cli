@@ -34,6 +34,11 @@ impl Client {
         }
     }
 
+    fn append_param(path: String, param: &str) -> String {
+        let sep = if path.contains('?') { '&' } else { '?' };
+        format!("{path}{sep}{param}")
+    }
+
     /// The ONLY http verb in this codebase is GET. Read-only is structural.
     async fn get_json<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
         let resp = self
@@ -86,28 +91,55 @@ impl Client {
         self.get_data("/budgets").await
     }
 
-    pub async fn get_accounts(&self, budget: &str) -> Result<ListResult<AccountsWrapper>> {
-        self.get_data(&format!("/budgets/{budget}/accounts")).await
+    pub async fn get_accounts(
+        &self,
+        budget: &str,
+        last_knowledge: Option<i64>,
+    ) -> Result<ListResult<AccountsWrapper>> {
+        let mut path = format!("/budgets/{budget}/accounts");
+        if let Some(k) = last_knowledge {
+            path = Self::append_param(path, &format!("last_knowledge_of_server={k}"));
+        }
+        self.get_data(&path).await
     }
 
-    pub async fn get_categories(&self, budget: &str) -> Result<ListResult<CategoryGroupsWrapper>> {
-        self.get_data(&format!("/budgets/{budget}/categories"))
-            .await
+    pub async fn get_categories(
+        &self,
+        budget: &str,
+        last_knowledge: Option<i64>,
+    ) -> Result<ListResult<CategoryGroupsWrapper>> {
+        let mut path = format!("/budgets/{budget}/categories");
+        if let Some(k) = last_knowledge {
+            path = Self::append_param(path, &format!("last_knowledge_of_server={k}"));
+        }
+        self.get_data(&path).await
     }
 
-    pub async fn get_payees(&self, budget: &str) -> Result<ListResult<PayeesWrapper>> {
-        self.get_data(&format!("/budgets/{budget}/payees")).await
+    pub async fn get_payees(
+        &self,
+        budget: &str,
+        last_knowledge: Option<i64>,
+    ) -> Result<ListResult<PayeesWrapper>> {
+        let mut path = format!("/budgets/{budget}/payees");
+        if let Some(k) = last_knowledge {
+            path = Self::append_param(path, &format!("last_knowledge_of_server={k}"));
+        }
+        self.get_data(&path).await
     }
 
     pub async fn get_transactions(
         &self,
         budget: &str,
         since_date: Option<&str>,
+        last_knowledge: Option<i64>,
     ) -> Result<ListResult<TransactionsWrapper>> {
-        let path = match since_date {
+        let mut path = match since_date {
             Some(d) => format!("/budgets/{budget}/transactions?since_date={d}"),
             None => format!("/budgets/{budget}/transactions"),
         };
+        if let Some(k) = last_knowledge {
+            path = Self::append_param(path, &format!("last_knowledge_of_server={k}"));
+        }
         self.get_data(&path).await
     }
 }
@@ -237,9 +269,23 @@ mod tests {
             .mount(&server)
             .await;
 
-        let r = client(&server).get_accounts("b-1").await.unwrap();
+        let r = client(&server).get_accounts("b-1", None).await.unwrap();
         assert_eq!(r.parsed.accounts[0].kind, "checking");
         assert_eq!(r.raw["server_knowledge"], 42);
+    }
+
+    #[tokio::test]
+    async fn get_accounts_passes_last_knowledge() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/budgets/b-1/accounts"))
+            .and(wiremock::matchers::query_param("last_knowledge_of_server", "42"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "accounts": [], "server_knowledge": 43 }
+            })))
+            .mount(&server)
+            .await;
+        client(&server).get_accounts("b-1", Some(42)).await.unwrap();
     }
 
     #[tokio::test]
@@ -255,10 +301,28 @@ mod tests {
             .await;
 
         let r = client(&server)
-            .get_transactions("last-used", Some("2026-07-01"))
+            .get_transactions("last-used", Some("2026-07-01"), None)
             .await
             .unwrap();
         assert!(r.parsed.transactions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_transactions_combines_since_and_knowledge() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/budgets/b-1/transactions"))
+            .and(wiremock::matchers::query_param("since_date", "2026-07-01"))
+            .and(wiremock::matchers::query_param("last_knowledge_of_server", "7"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "transactions": [], "server_knowledge": 8 }
+            })))
+            .mount(&server)
+            .await;
+        client(&server)
+            .get_transactions("b-1", Some("2026-07-01"), Some(7))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -281,9 +345,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let c = client(&server).get_categories("b-1").await.unwrap();
+        let c = client(&server).get_categories("b-1", None).await.unwrap();
         assert!(c.parsed.category_groups.is_empty());
-        let p = client(&server).get_payees("b-1").await.unwrap();
+        let p = client(&server).get_payees("b-1", None).await.unwrap();
         assert_eq!(p.parsed.payees[0].name, "Grocer");
     }
 }
