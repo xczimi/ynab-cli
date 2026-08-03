@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod auth;
 pub mod budgets;
+pub mod cache_cmd;
 pub mod categories;
 pub mod config_cmd;
 pub mod context;
@@ -67,6 +68,11 @@ pub enum Command {
     Transactions {
         #[command(subcommand)]
         command: TransactionsCommand,
+    },
+    /// Inspect or clear the local cache
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommand,
     },
 }
 
@@ -144,6 +150,14 @@ pub enum ConfigCommand {
     Set { key: String, value: String },
 }
 
+#[derive(Debug, Subcommand)]
+pub enum CacheCommand {
+    /// Show cache status
+    Status,
+    /// Clear the cache
+    Clear,
+}
+
 pub async fn run(cli: Cli) -> Result<()> {
     let json = cli.json;
     let budget = cli.budget.clone();
@@ -211,6 +225,10 @@ pub async fn run(cli: Cli) -> Result<()> {
                 )
                 .await
             }
+        },
+        Command::Cache { command } => match command {
+            CacheCommand::Status => cache_cmd::status(json),
+            CacheCommand::Clear => cache_cmd::clear(),
         },
     }
 }
