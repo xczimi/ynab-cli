@@ -37,9 +37,19 @@ One binary, three layers:
   everything else); OAuth Authorization Code flow immediately after — both are
   v1 scope.
 - Token resolution (decided 2026-08-02): `YNAB_PAT` env var (read-only
-  consumption, for CI/scripts/e2e tests) → keychain. Tokens are never
-  *stored* anywhere but the keychain. Test hooks: `YNAB_CLI_API_BASE_URL`,
-  `YNAB_CLI_CONFIG_DIR` env vars (CLI frontend concern).
+  consumption, for CI/scripts/e2e tests) → keychain PAT → OAuth access token
+  (auto-refreshed when stale). Tokens are never *stored* anywhere but the
+  keychain. Test hooks: `YNAB_CLI_API_BASE_URL`, `YNAB_CLI_CONFIG_DIR`,
+  `YNAB_CLI_DATA_DIR`, `YNAB_CLI_CACHE_KEY` env vars (CLI frontend concern).
+- `auth logout` (decided 2026-08-02): removes ALL tokens and OAuth app
+  credentials from the keychain AND deletes the cache DB (with sibling
+  journal files) and the cache encryption key — after logout no financial
+  data remains accessible on the machine.
+- Read-only nuance (decided 2026-08-02): the OAuth token exchange is an HTTP
+  POST to `app.ynab.com/oauth/token`, performed inside the `oauth2` crate —
+  our code still contains no HTTP write verb, and the YNAB *data* API client
+  remains GET-only in one file. The guarantee is about budget data, and the
+  OAuth endpoints cannot touch budget data.
 - **Bring-your-own OAuth app**: every user registers their own OAuth app on
   their YNAB developer page (~2 min) and hands the CLI its
   `client_id`/`client_secret` once; stored in keychain. No shared app, no
