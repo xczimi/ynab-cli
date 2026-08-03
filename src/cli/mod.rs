@@ -134,11 +134,18 @@ pub enum TransactionsCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
-    /// Log in with a YNAB Personal Access Token
-    Login,
+    /// Log in with a YNAB Personal Access Token, or via OAuth with --oauth
+    Login {
+        /// Use the OAuth Authorization Code flow instead of a pasted PAT
+        #[arg(long)]
+        oauth: bool,
+        /// Force re-prompting for OAuth app credentials (client id/secret)
+        #[arg(long)]
+        reset_app: bool,
+    },
     /// Show whether you are logged in and the token works
     Status,
-    /// Remove stored credentials from the OS keychain
+    /// Remove stored credentials and cached data
     Logout,
 }
 
@@ -167,7 +174,13 @@ pub async fn run(cli: Cli) -> Result<()> {
             let store = crate::secrets::SecretStore::new()?;
             let base = std::env::var("YNAB_CLI_API_BASE_URL").ok();
             match command {
-                AuthCommand::Login => auth::login(&store, base).await,
+                AuthCommand::Login { oauth, reset_app } => {
+                    if oauth {
+                        crate::auth::oauth::login(&store, reset_app).await
+                    } else {
+                        auth::login(&store, base).await
+                    }
+                }
                 AuthCommand::Status => auth::status(&store, base).await,
                 AuthCommand::Logout => auth::logout(&store),
             }
@@ -178,25 +191,25 @@ pub async fn run(cli: Cli) -> Result<()> {
         },
         Command::Budgets { command } => match command {
             BudgetsCommand::List => {
-                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache).await?;
                 budgets::list(&mut ctx).await
             }
         },
         Command::Accounts { command } => match command {
             AccountsCommand::List => {
-                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache).await?;
                 accounts::list(&mut ctx).await
             }
         },
         Command::Categories { command } => match command {
             CategoriesCommand::List => {
-                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache).await?;
                 categories::list(&mut ctx).await
             }
         },
         Command::Payees { command } => match command {
             PayeesCommand::List => {
-                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache).await?;
                 payees::list(&mut ctx).await
             }
         },
@@ -210,7 +223,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 uncategorized,
                 unapproved,
             } => {
-                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache).await?;
                 transactions::list(
                     &mut ctx,
                     transactions::Filters {

@@ -13,17 +13,24 @@ pub struct Ctx {
     pub budget: String,
 }
 
-/// Token sources in order: YNAB_PAT env var (CI/scripts), then the OS
-/// keychain. Storage remains keychain-only — the env var is read, never
-/// written.
-pub fn resolve_token(store: &SecretStore) -> Result<SecretString> {
+/// Token sources in order: YNAB_PAT env var (CI/scripts) → keychain PAT →
+/// OAuth access token (refreshed transparently if needed). Storage remains
+/// keychain-only — the env var is read, never written.
+pub async fn resolve_token(store: &SecretStore) -> Result<SecretString> {
     if let Ok(tok) = std::env::var("YNAB_PAT") {
         let trimmed = tok.trim();
         if !trimmed.is_empty() {
             return Ok(SecretString::from(trimmed.to_string()));
         }
     }
-    store.get(SecretKind::Pat)?.ok_or(Error::NotAuthenticated)
+    if let Some(pat) = store.get(SecretKind::Pat)? {
+        return Ok(pat);
+    }
+    match crate::auth::oauth::current_access_token(store).await {
+        Ok(Some(token)) => Ok(token),
+        Ok(None) | Err(Error::NotAuthenticated) => Err(Error::NotAuthenticated),
+        Err(e) => Err(e),
+    }
 }
 
 pub fn resolve_budget(flag: Option<&str>, config: &Config) -> String {
@@ -45,10 +52,10 @@ pub fn resolve_budget(flag: Option<&str>, config: &Config) -> String {
 /// invocations). Cache trouble (e.g. `Cache::open` failing because there is
 /// no writable data dir) must never block a read: fall back to `None`
 /// silently.
-pub fn build_ctx(json: bool, budget_flag: Option<&str>, no_cache: bool) -> Result<Ctx> {
+pub async fn build_ctx(json: bool, budget_flag: Option<&str>, no_cache: bool) -> Result<Ctx> {
     let config = Config::load()?;
     let store = SecretStore::new()?;
-    let token = resolve_token(&store)?;
+    let token = resolve_token(&store).await?;
     let client = match std::env::var("YNAB_CLI_API_BASE_URL").ok() {
         Some(base) => Client::with_base_url(token, base),
         None => Client::new(token),
@@ -91,22 +98,53 @@ mod tests {
         assert_eq!(resolve_budget(None, &empty), "last-used");
     }
 
+    // Plain `#[test]` + `Runtime::block_on` (not `#[tokio::test]`), matching
+    // `auth::oauth`'s tests: holding the std `TEST_LOCK` `MutexGuard` across
+    // an `.await` inside an `async fn` trips clippy's `await_holding_lock`; a
+    // sync test driving its own runtime avoids that entirely.
+
     #[test]
     fn token_prefers_keychain_when_no_env() {
         // Serial-safety: this test must not run with YNAB_PAT set; the
         // binary-level test in tests/cli_lists.rs covers the env path.
+        let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
         let store = mock_store();
         store
             .set(SecretKind::Pat, SecretString::from("kc-tok"))
             .unwrap();
-        let tok = resolve_token(&store).unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let tok = rt.block_on(resolve_token(&store)).unwrap();
         assert_eq!(tok.expose_secret(), "kc-tok");
     }
 
     #[test]
     fn token_missing_is_not_authenticated() {
+        let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
         let store = mock_store();
-        let err = resolve_token(&store).unwrap_err();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt.block_on(resolve_token(&store)).unwrap_err();
         assert!(matches!(err, crate::error::Error::NotAuthenticated));
+    }
+
+    #[test]
+    fn token_resolution_pat_beats_oauth() {
+        let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
+        let store = mock_store();
+        store
+            .set(SecretKind::Pat, SecretString::from("pat-tok"))
+            .unwrap();
+        let stored_oauth = serde_json::json!({
+            "access_token": "oauth-tok",
+            "expires_at": crate::auth::unix_now() + 3600,
+        });
+        store
+            .set(
+                SecretKind::OauthAccessToken,
+                SecretString::from(stored_oauth.to_string()),
+            )
+            .unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let tok = rt.block_on(resolve_token(&store)).unwrap();
+        assert_eq!(tok.expose_secret(), "pat-tok");
     }
 }

@@ -1,6 +1,6 @@
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("not logged in — run `ynab auth login`")]
+    #[error("not logged in — run `ynab auth login` (or `ynab auth login --oauth`)")]
     NotAuthenticated,
     #[error("rate limited by YNAB (200 requests/hour) — resets within the hour")]
     RateLimited,
@@ -38,7 +38,7 @@ mod tests {
     fn user_facing_messages() {
         assert_eq!(
             Error::NotAuthenticated.to_string(),
-            "not logged in — run `ynab auth login`"
+            "not logged in — run `ynab auth login` (or `ynab auth login --oauth`)"
         );
         assert_eq!(
             Error::RateLimited.to_string(),
