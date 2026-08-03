@@ -33,14 +33,32 @@ pub async fn resolve_token(store: &SecretStore) -> Result<SecretString> {
     }
 }
 
-pub fn resolve_budget(flag: Option<&str>, config: &Config) -> String {
-    if let Some(b) = flag {
-        return b.to_string();
+/// A budget ref is either the literal alias `last-used` or a loosely
+/// UUID-shaped id: exactly 36 characters drawn from `[0-9a-fA-F-]`. This is
+/// intentionally not full UUID validation (hyphen positions aren't checked)
+/// — it exists to reject garbage before it reaches the network, not to
+/// police YNAB's id format. Because the charset excludes anything that would
+/// need percent-encoding, no URL-encoding of the budget segment is needed.
+fn is_valid_budget_ref(s: &str) -> bool {
+    s == "last-used"
+        || (s.chars().count() == 36 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-'))
+}
+
+pub fn resolve_budget(flag: Option<&str>, config: &Config) -> Result<String> {
+    let budget = match flag {
+        Some(b) => b.to_string(),
+        None => config
+            .default_budget
+            .clone()
+            .unwrap_or_else(|| "last-used".to_string()),
+    };
+    if is_valid_budget_ref(&budget) {
+        Ok(budget)
+    } else {
+        Err(Error::Config(
+            "budget must be a budget id (UUID) or 'last-used'".into(),
+        ))
     }
-    config
-        .default_budget
-        .clone()
-        .unwrap_or_else(|| "last-used".to_string())
 }
 
 /// Env hooks (YNAB_CLI_API_BASE_URL, YNAB_PAT) are a CLI-frontend concern;
@@ -60,7 +78,7 @@ pub async fn build_ctx(json: bool, budget_flag: Option<&str>, no_cache: bool) ->
         Some(base) => Client::with_base_url(token, base),
         None => Client::new(token),
     };
-    let budget = resolve_budget(budget_flag, &config);
+    let budget = resolve_budget(budget_flag, &config)?;
     let cache = if config.cache_enabled() && !no_cache && budget != "last-used" {
         Cache::open(&store).ok()
     } else {
@@ -88,14 +106,39 @@ mod tests {
 
     #[test]
     fn budget_resolution_order() {
+        let flag_budget = "11111111-1111-1111-1111-111111111111";
+        let cfg_budget = "22222222-2222-2222-2222-222222222222";
         let cfg = Config {
             cache: None,
-            default_budget: Some("cfg-b".into()),
+            default_budget: Some(cfg_budget.into()),
         };
-        assert_eq!(resolve_budget(Some("flag-b"), &cfg), "flag-b");
-        assert_eq!(resolve_budget(None, &cfg), "cfg-b");
+        assert_eq!(
+            resolve_budget(Some(flag_budget), &cfg).unwrap(),
+            flag_budget
+        );
+        assert_eq!(resolve_budget(None, &cfg).unwrap(), cfg_budget);
         let empty = Config::default();
-        assert_eq!(resolve_budget(None, &empty), "last-used");
+        assert_eq!(resolve_budget(None, &empty).unwrap(), "last-used");
+    }
+
+    #[test]
+    fn budget_resolution_rejects_invalid_ref() {
+        let cfg = Config::default();
+        let err = resolve_budget(Some("not-a-valid-budget-id"), &cfg).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "config error: budget must be a budget id (UUID) or 'last-used'"
+        );
+
+        let bad_cfg = Config {
+            cache: None,
+            default_budget: Some("short".into()),
+        };
+        let err = resolve_budget(None, &bad_cfg).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "config error: budget must be a budget id (UUID) or 'last-used'"
+        );
     }
 
     // Plain `#[test]` + `Runtime::block_on` (not `#[tokio::test]`), matching

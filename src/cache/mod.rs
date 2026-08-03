@@ -5,10 +5,12 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 use secrecy::{ExposeSecret, SecretString};
+use zeroize::Zeroizing;
 
 use crate::error::{Error, Result};
 use crate::secrets::{SecretKind, SecretStore};
 
+#[derive(Debug)]
 pub struct Cache {
     conn: Connection,
 }
@@ -75,7 +77,8 @@ impl Cache {
     /// confirm the key actually decrypts the file, without ever mutating it.
     fn try_open_readonly(path: &Path, key: &SecretString) -> rusqlite::Result<Connection> {
         let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        conn.pragma_update(None, "key", format!("x'{}'", key.expose_secret()))?;
+        let pragma_value: Zeroizing<String> = Zeroizing::new(format!("x'{}'", key.expose_secret()));
+        conn.pragma_update(None, "key", pragma_value.as_str())?;
         conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| {
             row.get::<_, i64>(0)
         })?;
@@ -87,7 +90,8 @@ impl Cache {
             let _ = std::fs::create_dir_all(parent);
         }
         let conn = Connection::open(path)?;
-        conn.pragma_update(None, "key", format!("x'{}'", key.expose_secret()))?;
+        let pragma_value: Zeroizing<String> = Zeroizing::new(format!("x'{}'", key.expose_secret()));
+        conn.pragma_update(None, "key", pragma_value.as_str())?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS sync_state (
                budget_id TEXT NOT NULL,
@@ -112,6 +116,11 @@ impl Cache {
         if let Ok(k) = std::env::var("YNAB_CLI_CACHE_KEY") {
             let trimmed = k.trim();
             if !trimmed.is_empty() {
+                if trimmed.len() != 64 || !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Err(Error::Cache(
+                        "YNAB_CLI_CACHE_KEY must be 64 hex characters".into(),
+                    ));
+                }
                 return Ok(SecretString::from(trimmed.to_string()));
             }
         }
@@ -120,9 +129,12 @@ impl Cache {
         }
         let mut bytes = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut bytes);
-        let hex_key = hex::encode(bytes);
-        store.set(SecretKind::CacheKey, SecretString::from(hex_key.clone()))?;
-        Ok(SecretString::from(hex_key))
+        // The freshly-generated key exists as plaintext hex only as long as
+        // this Zeroizing wrapper is alive; it's wiped on drop rather than
+        // lingering in freed heap memory.
+        let hex_key: Zeroizing<String> = Zeroizing::new(hex::encode(bytes));
+        store.set(SecretKind::CacheKey, SecretString::from(hex_key.as_str()))?;
+        Ok(SecretString::from(hex_key.as_str()))
     }
 }
 
@@ -337,6 +349,37 @@ pub mod tests {
                     .get(crate::secrets::SecretKind::CacheKey)
                     .unwrap()
                     .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn env_key_wrong_length_is_rejected() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let store = mock_store();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.db");
+        temp_env::with_var("YNAB_CLI_CACHE_KEY", Some("ab".repeat(10)), || {
+            let err = Cache::open_at(&store, &path).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                "cache error: YNAB_CLI_CACHE_KEY must be 64 hex characters"
+            );
+        });
+    }
+
+    #[test]
+    fn env_key_non_hex_is_rejected() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let store = mock_store();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.db");
+        let bad_key = "zz".repeat(32); // right length, not hex
+        temp_env::with_var("YNAB_CLI_CACHE_KEY", Some(bad_key), || {
+            let err = Cache::open_at(&store, &path).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                "cache error: YNAB_CLI_CACHE_KEY must be 64 hex characters"
             );
         });
     }
