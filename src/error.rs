@@ -8,6 +8,8 @@ pub enum Error {
     Api { status: u16, message: String },
     #[error("unexpected API response: {0}")]
     Decode(String),
+    #[error("cache error: {0}")]
+    Cache(String),
     #[error("keychain error: {0}")]
     Keychain(#[from] keyring::Error),
     #[error("config error: {0}")]

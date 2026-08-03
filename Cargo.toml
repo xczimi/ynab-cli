@@ -26,9 +26,13 @@ secrecy = "0.10"
 toml = "0.8"
 directories = "6"
 rpassword = "7"
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+rand = "0.8"
+hex = "0.4"
 
 [dev-dependencies]
 wiremock = "0.6"
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+temp-env = "0.3"
