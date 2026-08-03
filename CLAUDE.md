@@ -7,9 +7,12 @@ agent can drive via Bash, with an MCP server over the same core.
 
 ## Core principles
 
-1. **Read-only is structural, not policy.** The client module contains only
-   GET requests — no write verbs exist anywhere in the codebase, so "this
-   cannot write" is verifiable by reading one file. Writes are permanently out
+1. **Read-only is structural, not policy.** The YNAB data API client
+   contains only GET requests — no HTTP write verb exists anywhere in our
+   code, so "this cannot write budget data" is verifiable by reading one
+   file. (Single carve-out: the OAuth token exchange POSTs to
+   `app.ynab.com/oauth/token` inside the `oauth2` crate; it cannot touch
+   budget data and always requests `scope=read-only`.) Writes are permanently out
    of scope for this binary; if they ever happen, they live in a separate
    extension/tool.
 2. **Server-side enforcement where possible.** OAuth flow always requests
