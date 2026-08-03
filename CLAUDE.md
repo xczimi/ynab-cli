@@ -61,7 +61,9 @@ One binary, three layers:
 - `ynab payees list`
 - `ynab transactions list` — the workhorse: `--since`/`--until`, `--payee`,
   `--account`, `--category`, `--uncategorized`, `--unapproved`. API supports
-  only `since_date`; all other filters are client-side (SQL over the cache).
+  only `since_date`; all other filters are client-side, in-memory over cached
+  data (decided 2026-08-02: reuse the tested filter functions rather than a
+  second SQL implementation of the same semantics).
 - `ynab config get|set` — edits the TOML config
 - `ynab cache clear|status`
 - `ynab mcp serve`
@@ -98,6 +100,12 @@ transactions, payee locations, single-item `get` subcommands.
   XDG, `%APPDATA%`).
 - Opt-out: `cache = false` in config, or `--no-cache` per invocation — rate
   limit management is ultimately the user's choice.
+- Scope decisions (2026-08-02): the cache requires a concrete budget id — the
+  `last-used` alias bypasses it (the API never reveals which budget the alias
+  resolves to, so caching under it could silently mix budgets; set
+  `default_budget` to get caching). Categories are fetched full and replaced
+  wholesale (nested-group delta merge isn't worth it for a small payload).
+  `budgets list` is never cached (no delta support; one cheap request).
 - A corrupted/undecryptable cache is silently discarded and refetched; it is
   never an error the user must fix.
 
