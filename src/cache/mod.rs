@@ -91,7 +91,7 @@ impl Cache {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use std::sync::Mutex;
 
     use super::*;
@@ -103,7 +103,7 @@ mod tests {
     // temporarily sets the var can leak it into an unrelated test running on
     // another thread under cargo's default parallel test runner. Serialize all
     // cache tests (they all resolve a key) against each other to avoid that.
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    pub static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn mock_store() -> SecretStore {
         keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
