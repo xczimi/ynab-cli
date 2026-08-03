@@ -33,8 +33,7 @@ fn envelope<T: serde::de::DeserializeOwned>(
     let all = cache.load_entities(budget, resource, order)?;
     let sk = cache.server_knowledge(budget, resource)?.unwrap_or(0);
     let raw = serde_json::json!({ key: all, "server_knowledge": sk });
-    let parsed =
-        serde_json::from_value(raw.clone()).map_err(|e| Error::Decode(e.to_string()))?;
+    let parsed = serde_json::from_value(raw.clone()).map_err(|e| Error::Decode(e.to_string()))?;
     Ok(ListResult { raw, parsed })
 }
 
@@ -101,7 +100,13 @@ pub async fn transactions(
         &entity_pairs(&fetched.raw, "transactions"),
     )?;
     store_knowledge(cache, budget, "transactions", &fetched.raw)?;
-    envelope(cache, budget, "transactions", "transactions", Some("$.date"))
+    envelope(
+        cache,
+        budget,
+        "transactions",
+        "transactions",
+        Some("$.date"),
+    )
 }
 
 #[cfg(test)]
@@ -184,9 +189,7 @@ mod tests {
         let server = MockServer::start().await;
         let dir = tempfile::tempdir().unwrap();
         let mut cache = cache_in(&dir);
-        let body = |groups: serde_json::Value, sk: i64| {
-            serde_json::json!({ "data": { "category_groups": groups, "server_knowledge": sk } })
-        };
+        let body = |groups: serde_json::Value, sk: i64| serde_json::json!({ "data": { "category_groups": groups, "server_knowledge": sk } });
         let group = |id: &str, name: &str| {
             serde_json::json!({ "id": id, "name": name, "hidden": false, "deleted": false,
                                 "categories": [] })
@@ -194,23 +197,31 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/budgets/b-1/categories"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(body(serde_json::json!([group("g-1", "Bills")]), 5)))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(body(serde_json::json!([group("g-1", "Bills")]), 5)),
+            )
             .expect(1)
             .mount(&server)
             .await;
-        categories(&client(&server), &mut cache, "b-1").await.unwrap();
+        categories(&client(&server), &mut cache, "b-1")
+            .await
+            .unwrap();
         server.reset().await;
 
         // full refetch replaces — g-1 gone, g-2 present; NO last_knowledge param sent
         Mock::given(method("GET"))
             .and(path("/budgets/b-1/categories"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(body(serde_json::json!([group("g-2", "Fun")]), 6)))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(body(serde_json::json!([group("g-2", "Fun")]), 6)),
+            )
             .expect(1)
             .mount(&server)
             .await;
-        let second = categories(&client(&server), &mut cache, "b-1").await.unwrap();
+        let second = categories(&client(&server), &mut cache, "b-1")
+            .await
+            .unwrap();
         assert_eq!(second.parsed.category_groups.len(), 1);
         assert_eq!(second.parsed.category_groups[0].id, "g-2");
     }
@@ -232,7 +243,9 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let result = transactions(&client(&server), &mut cache, "b-1").await.unwrap();
+        let result = transactions(&client(&server), &mut cache, "b-1")
+            .await
+            .unwrap();
         assert_eq!(result.parsed.transactions.len(), 1);
         let requests = server.received_requests().await.unwrap();
         assert!(!requests[0].url.query().unwrap_or("").contains("since_date"));

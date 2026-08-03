@@ -30,8 +30,10 @@ async fn transactions_delta_cache_roundtrip() {
     // first call: full fetch (no last_knowledge_of_server)
     Mock::given(method("GET"))
         .and(path("/budgets/b-1/transactions"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(tx_body(serde_json::json!([tx("t-1", "2026-07-01", "Grocer")]), 10)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tx_body(
+            serde_json::json!([tx("t-1", "2026-07-01", "Grocer")]),
+            10,
+        )))
         .expect(1)
         .mount(&server)
         .await;
@@ -57,8 +59,10 @@ async fn transactions_delta_cache_roundtrip() {
     Mock::given(method("GET"))
         .and(path("/budgets/b-1/transactions"))
         .and(query_param("last_knowledge_of_server", "10"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(tx_body(serde_json::json!([tx("t-2", "2026-07-20", "Landlord")]), 11)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tx_body(
+            serde_json::json!([tx("t-2", "2026-07-20", "Landlord")]),
+            11,
+        )))
         .expect(1)
         .mount(&server)
         .await;
@@ -66,8 +70,7 @@ async fn transactions_delta_cache_roundtrip() {
     Mock::given(method("GET"))
         .and(path("/budgets/b-1/transactions"))
         .and(query_param("last_knowledge_of_server", "11"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(tx_body(serde_json::json!([]), 11)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tx_body(serde_json::json!([]), 11)))
         .expect(1)
         .mount(&server)
         .await;
@@ -82,7 +85,14 @@ async fn transactions_delta_cache_roundtrip() {
             .stdout(predicate::str::contains("Landlord"));
         // --since filters locally over the cached set (no new since_date request)
         ynab(&cfg, &dat, &u)
-            .args(["transactions", "list", "--budget", "b-1", "--since", "2026-07-10"])
+            .args([
+                "transactions",
+                "list",
+                "--budget",
+                "b-1",
+                "--since",
+                "2026-07-10",
+            ])
             .assert()
             .success()
             .stdout(predicate::str::contains("Landlord"))
@@ -93,7 +103,11 @@ async fn transactions_delta_cache_roundtrip() {
 
     // exactly 3 requests total, none with since_date
     let requests = server.received_requests().await.unwrap();
-    assert!(requests.iter().all(|r| !r.url.query().unwrap_or("").contains("since_date")));
+    assert!(
+        requests
+            .iter()
+            .all(|r| !r.url.query().unwrap_or("").contains("since_date"))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -101,8 +115,10 @@ async fn no_cache_flag_bypasses() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/budgets/b-1/transactions"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(tx_body(serde_json::json!([tx("t-1", "2026-07-01", "Grocer")]), 10)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tx_body(
+            serde_json::json!([tx("t-1", "2026-07-01", "Grocer")]),
+            10,
+        )))
         .expect(2)
         .mount(&server)
         .await;
@@ -124,7 +140,10 @@ async fn no_cache_flag_bypasses() {
     assert!(!data.path().join("cache.db").exists());
     // and neither request carried last_knowledge_of_server
     let requests = server.received_requests().await.unwrap();
-    assert!(requests
-        .iter()
-        .all(|r| !r.url.query().unwrap_or("").contains("last_knowledge_of_server")));
+    assert!(requests.iter().all(|r| {
+        !r.url
+            .query()
+            .unwrap_or("")
+            .contains("last_knowledge_of_server")
+    }));
 }

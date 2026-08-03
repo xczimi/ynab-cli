@@ -279,7 +279,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/budgets/b-1/accounts"))
-            .and(wiremock::matchers::query_param("last_knowledge_of_server", "42"))
+            .and(wiremock::matchers::query_param(
+                "last_knowledge_of_server",
+                "42",
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": { "accounts": [], "server_knowledge": 43 }
             })))
@@ -313,7 +316,10 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/budgets/b-1/transactions"))
             .and(wiremock::matchers::query_param("since_date", "2026-07-01"))
-            .and(wiremock::matchers::query_param("last_knowledge_of_server", "7"))
+            .and(wiremock::matchers::query_param(
+                "last_knowledge_of_server",
+                "7",
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": { "transactions": [], "server_knowledge": 8 }
             })))
