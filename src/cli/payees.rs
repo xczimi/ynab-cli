@@ -2,9 +2,18 @@ use crate::cli::context::Ctx;
 use crate::error::Result;
 use crate::output;
 
-pub async fn list(ctx: &Ctx) -> Result<()> {
-    let result = ctx.client.get_payees(&ctx.budget, None).await?;
-    if ctx.json {
+pub async fn list(ctx: &mut Ctx) -> Result<()> {
+    let Ctx {
+        client,
+        cache,
+        budget,
+        json,
+    } = ctx;
+    let result = match cache {
+        Some(cache) => crate::cache::sync::payees(client, cache, budget).await?,
+        None => client.get_payees(budget, None).await?,
+    };
+    if *json {
         return output::print_json(&result.raw);
     }
     let rows = result
@@ -30,6 +39,7 @@ mod tests {
     fn ctx(server: &MockServer, json: bool) -> Ctx {
         Ctx {
             client: Client::with_base_url(SecretString::from("t"), server.uri()),
+            cache: None,
             json,
             budget: "b-1".to_string(),
         }
@@ -49,7 +59,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        list(&ctx(&server, false)).await.unwrap();
-        list(&ctx(&server, true)).await.unwrap();
+        list(&mut ctx(&server, false)).await.unwrap();
+        list(&mut ctx(&server, true)).await.unwrap();
     }
 }

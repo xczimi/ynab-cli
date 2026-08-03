@@ -33,6 +33,11 @@ pub(crate) fn keep(t: &Transaction, f: &Filters) -> bool {
 }
 
 fn matches_filters(t: &Transaction, f: &Filters) -> bool {
+    if let Some(s) = &f.since
+        && t.date.as_str() < s.as_str()
+    {
+        return false;
+    }
     if let Some(until) = &f.until
         && t.date.as_str() > until.as_str()
     {
@@ -73,7 +78,7 @@ fn truncate_memo(memo: &Option<String>) -> String {
     }
 }
 
-pub async fn list(ctx: &Ctx, filters: Filters) -> Result<()> {
+pub async fn list(ctx: &mut Ctx, filters: Filters) -> Result<()> {
     let since = filters
         .since
         .as_deref()
@@ -90,12 +95,22 @@ pub async fn list(ctx: &Ctx, filters: Filters) -> Result<()> {
         ..filters
     };
 
-    let result = ctx
-        .client
-        .get_transactions(&ctx.budget, filters.since.as_deref(), None)
-        .await?;
+    let Ctx {
+        client,
+        cache,
+        budget,
+        json,
+    } = ctx;
+    let result = match cache {
+        Some(cache) => crate::cache::sync::transactions(client, cache, budget).await?,
+        None => {
+            client
+                .get_transactions(budget, filters.since.as_deref(), None)
+                .await?
+        }
+    };
 
-    if ctx.json {
+    if *json {
         let matches: Vec<bool> = result
             .parsed
             .transactions
@@ -180,6 +195,20 @@ mod tests {
         let mut dead = tx();
         dead.deleted = true;
         assert!(!keep(&dead, &f));
+    }
+
+    #[test]
+    fn since_filters_locally() {
+        let f = Filters {
+            since: Some("2026-07-16".into()),
+            ..Default::default()
+        };
+        assert!(!matches_filters(&tx(), &f)); // fixture date 2026-07-15
+        let f = Filters {
+            since: Some("2026-07-15".into()),
+            ..Default::default()
+        };
+        assert!(matches_filters(&tx(), &f));
     }
 
     #[test]

@@ -1,12 +1,14 @@
 use secrecy::SecretString;
 
 use crate::api::client::Client;
+use crate::cache::Cache;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::secrets::{SecretKind, SecretStore};
 
 pub struct Ctx {
     pub client: Client,
+    pub cache: Option<Cache>,
     pub json: bool,
     pub budget: String,
 }
@@ -36,7 +38,14 @@ pub fn resolve_budget(flag: Option<&str>, config: &Config) -> String {
 
 /// Env hooks (YNAB_CLI_API_BASE_URL, YNAB_PAT) are a CLI-frontend concern;
 /// the M4 MCP frontend decides its own wiring.
-pub fn build_ctx(json: bool, budget_flag: Option<&str>) -> Result<Ctx> {
+///
+/// Cache is `Some` iff the config has caching enabled, `--no-cache` wasn't
+/// passed, and the budget isn't the `last-used` alias (locked decision — the
+/// alias bypasses caching since it can resolve to different budgets between
+/// invocations). Cache trouble (e.g. `Cache::open` failing because there is
+/// no writable data dir) must never block a read: fall back to `None`
+/// silently.
+pub fn build_ctx(json: bool, budget_flag: Option<&str>, no_cache: bool) -> Result<Ctx> {
     let config = Config::load()?;
     let store = SecretStore::new()?;
     let token = resolve_token(&store)?;
@@ -44,10 +53,17 @@ pub fn build_ctx(json: bool, budget_flag: Option<&str>) -> Result<Ctx> {
         Some(base) => Client::with_base_url(token, base),
         None => Client::new(token),
     };
+    let budget = resolve_budget(budget_flag, &config);
+    let cache = if config.cache_enabled() && !no_cache && budget != "last-used" {
+        Cache::open(&store).ok()
+    } else {
+        None
+    };
     Ok(Ctx {
         client,
+        cache,
         json,
-        budget: resolve_budget(budget_flag, &config),
+        budget,
     })
 }
 

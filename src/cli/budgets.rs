@@ -2,7 +2,7 @@ use crate::cli::context::Ctx;
 use crate::error::Result;
 use crate::output;
 
-pub async fn list(ctx: &Ctx) -> Result<()> {
+pub async fn list(ctx: &mut Ctx) -> Result<()> {
     let result = ctx.client.get_budgets().await?;
     if ctx.json {
         return output::print_json(&result.raw);

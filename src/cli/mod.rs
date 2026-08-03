@@ -26,6 +26,9 @@ pub struct Cli {
     /// Budget id (default: config default_budget, then the API's last-used)
     #[arg(long, global = true, value_name = "BUDGET")]
     pub budget: Option<String>,
+    /// Bypass the local cache for this invocation
+    #[arg(long, global = true)]
+    pub no_cache: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -144,6 +147,7 @@ pub enum ConfigCommand {
 pub async fn run(cli: Cli) -> Result<()> {
     let json = cli.json;
     let budget = cli.budget.clone();
+    let no_cache = cli.no_cache;
     match cli.command {
         Command::Auth { command } => {
             let store = crate::secrets::SecretStore::new()?;
@@ -160,26 +164,26 @@ pub async fn run(cli: Cli) -> Result<()> {
         },
         Command::Budgets { command } => match command {
             BudgetsCommand::List => {
-                let ctx = context::build_ctx(json, budget.as_deref())?;
-                budgets::list(&ctx).await
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
+                budgets::list(&mut ctx).await
             }
         },
         Command::Accounts { command } => match command {
             AccountsCommand::List => {
-                let ctx = context::build_ctx(json, budget.as_deref())?;
-                accounts::list(&ctx).await
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
+                accounts::list(&mut ctx).await
             }
         },
         Command::Categories { command } => match command {
             CategoriesCommand::List => {
-                let ctx = context::build_ctx(json, budget.as_deref())?;
-                categories::list(&ctx).await
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
+                categories::list(&mut ctx).await
             }
         },
         Command::Payees { command } => match command {
             PayeesCommand::List => {
-                let ctx = context::build_ctx(json, budget.as_deref())?;
-                payees::list(&ctx).await
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
+                payees::list(&mut ctx).await
             }
         },
         Command::Transactions { command } => match command {
@@ -192,9 +196,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 uncategorized,
                 unapproved,
             } => {
-                let ctx = context::build_ctx(json, budget.as_deref())?;
+                let mut ctx = context::build_ctx(json, budget.as_deref(), no_cache)?;
                 transactions::list(
-                    &ctx,
+                    &mut ctx,
                     transactions::Filters {
                         since,
                         until,
