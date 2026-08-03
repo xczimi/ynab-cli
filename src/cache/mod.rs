@@ -1,4 +1,5 @@
 mod store;
+pub mod sync;
 
 use std::path::{Path, PathBuf};
 
