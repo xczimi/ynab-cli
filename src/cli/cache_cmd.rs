@@ -67,6 +67,7 @@ mod tests {
 
     #[test]
     fn status_displays_populated_cache() {
+        let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
         let store = mock_store();
         let dir = tempfile::tempdir().unwrap();
         let data_dir = dir.path();
