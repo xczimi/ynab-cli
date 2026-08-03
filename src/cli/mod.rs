@@ -2,6 +2,7 @@ pub mod auth;
 pub mod budgets;
 pub mod config_cmd;
 pub mod context;
+pub mod transactions;
 
 use clap::{Parser, Subcommand};
 
@@ -41,12 +42,45 @@ pub enum Command {
         #[command(subcommand)]
         command: BudgetsCommand,
     },
+    /// List transactions
+    Transactions {
+        #[command(subcommand)]
+        command: TransactionsCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 pub enum BudgetsCommand {
     /// List all budgets
     List,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TransactionsCommand {
+    /// List transactions (filters combine with AND)
+    List {
+        /// Only transactions on or after this ISO date (sent to the API)
+        #[arg(long, value_name = "YYYY-MM-DD")]
+        since: Option<String>,
+        /// Only transactions on or before this ISO date
+        #[arg(long, value_name = "YYYY-MM-DD")]
+        until: Option<String>,
+        /// Payee id, or case-insensitive name substring
+        #[arg(long)]
+        payee: Option<String>,
+        /// Account id, or case-insensitive name substring
+        #[arg(long)]
+        account: Option<String>,
+        /// Category id, or case-insensitive name substring
+        #[arg(long)]
+        category: Option<String>,
+        /// Only transactions with no category
+        #[arg(long)]
+        uncategorized: bool,
+        /// Only unapproved transactions
+        #[arg(long)]
+        unapproved: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -88,6 +122,32 @@ pub async fn run(cli: Cli) -> Result<()> {
             BudgetsCommand::List => {
                 let ctx = context::build_ctx(json, budget.as_deref())?;
                 budgets::list(&ctx).await
+            }
+        },
+        Command::Transactions { command } => match command {
+            TransactionsCommand::List {
+                since,
+                until,
+                payee,
+                account,
+                category,
+                uncategorized,
+                unapproved,
+            } => {
+                let ctx = context::build_ctx(json, budget.as_deref())?;
+                transactions::list(
+                    &ctx,
+                    transactions::Filters {
+                        since,
+                        until,
+                        payee,
+                        account,
+                        category,
+                        uncategorized,
+                        unapproved,
+                    },
+                )
+                .await
             }
         },
     }
