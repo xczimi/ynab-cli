@@ -29,6 +29,7 @@ rpassword = "7"
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 rand = "0.8"
 hex = "0.4"
+webbrowser = "1"
 
 [dev-dependencies]
 wiremock = "0.6"
