@@ -29,7 +29,9 @@ async fn transactions_delta_cache_roundtrip() {
     let server = MockServer::start().await;
     // first call: full fetch (no last_knowledge_of_server)
     Mock::given(method("GET"))
-        .and(path("/budgets/b-1/transactions"))
+        .and(path(
+            "/budgets/11111111-1111-1111-1111-111111111111/transactions",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(tx_body(
             serde_json::json!([tx("t-1", "2026-07-01", "Grocer")]),
             10,
@@ -45,7 +47,12 @@ async fn transactions_delta_cache_roundtrip() {
     let u = uri.clone();
     tokio::task::spawn_blocking(move || {
         ynab(&cfg, &dat, &u)
-            .args(["transactions", "list", "--budget", "b-1"])
+            .args([
+                "transactions",
+                "list",
+                "--budget",
+                "11111111-1111-1111-1111-111111111111",
+            ])
             .assert()
             .success()
             .stdout(predicate::str::contains("Grocer"));
@@ -57,7 +64,9 @@ async fn transactions_delta_cache_roundtrip() {
     // second call: MUST send last_knowledge_of_server=10; delta adds t-2;
     // output contains BOTH rows (t-1 from cache, t-2 from delta)
     Mock::given(method("GET"))
-        .and(path("/budgets/b-1/transactions"))
+        .and(path(
+            "/budgets/11111111-1111-1111-1111-111111111111/transactions",
+        ))
         .and(query_param("last_knowledge_of_server", "10"))
         .respond_with(ResponseTemplate::new(200).set_body_json(tx_body(
             serde_json::json!([tx("t-2", "2026-07-20", "Landlord")]),
@@ -68,7 +77,9 @@ async fn transactions_delta_cache_roundtrip() {
         .await;
     // third invocation (--since) syncs again with knowledge 11 → empty delta
     Mock::given(method("GET"))
-        .and(path("/budgets/b-1/transactions"))
+        .and(path(
+            "/budgets/11111111-1111-1111-1111-111111111111/transactions",
+        ))
         .and(query_param("last_knowledge_of_server", "11"))
         .respond_with(ResponseTemplate::new(200).set_body_json(tx_body(serde_json::json!([]), 11)))
         .expect(1)
@@ -78,7 +89,12 @@ async fn transactions_delta_cache_roundtrip() {
     let u = uri.clone();
     tokio::task::spawn_blocking(move || {
         ynab(&cfg, &dat, &u)
-            .args(["transactions", "list", "--budget", "b-1"])
+            .args([
+                "transactions",
+                "list",
+                "--budget",
+                "11111111-1111-1111-1111-111111111111",
+            ])
             .assert()
             .success()
             .stdout(predicate::str::contains("Grocer"))
@@ -89,7 +105,7 @@ async fn transactions_delta_cache_roundtrip() {
                 "transactions",
                 "list",
                 "--budget",
-                "b-1",
+                "11111111-1111-1111-1111-111111111111",
                 "--since",
                 "2026-07-10",
             ])
@@ -114,7 +130,9 @@ async fn transactions_delta_cache_roundtrip() {
 async fn no_cache_flag_bypasses() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/budgets/b-1/transactions"))
+        .and(path(
+            "/budgets/11111111-1111-1111-1111-111111111111/transactions",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(tx_body(
             serde_json::json!([tx("t-1", "2026-07-01", "Grocer")]),
             10,
@@ -129,7 +147,13 @@ async fn no_cache_flag_bypasses() {
     tokio::task::spawn_blocking(move || {
         for _ in 0..2 {
             ynab(&cfg, &dat, &uri)
-                .args(["transactions", "list", "--budget", "b-1", "--no-cache"])
+                .args([
+                    "transactions",
+                    "list",
+                    "--budget",
+                    "11111111-1111-1111-1111-111111111111",
+                    "--no-cache",
+                ])
                 .assert()
                 .success();
         }

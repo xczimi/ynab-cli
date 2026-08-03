@@ -37,3 +37,41 @@ fn cache_status_empty_and_clear_missing() {
         .assert()
         .success();
 }
+
+#[test]
+fn cache_status_empty_tips_default_budget_when_unset() {
+    let config = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let (cfg, dat) = (config.path(), data.path());
+
+    ynab(cfg, dat, "http://localhost:9999")
+        .args(["cache", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Tip: set a default budget (ynab config set default_budget <id>) to enable delta caching.",
+        ));
+}
+
+#[test]
+fn cache_status_empty_omits_tip_when_default_budget_set() {
+    let config = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let (cfg, dat) = (config.path(), data.path());
+
+    ynab(cfg, dat, "http://localhost:9999")
+        .args([
+            "config",
+            "set",
+            "default_budget",
+            "11111111-1111-1111-1111-111111111111",
+        ])
+        .assert()
+        .success();
+
+    ynab(cfg, dat, "http://localhost:9999")
+        .args(["cache", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Tip:").not());
+}

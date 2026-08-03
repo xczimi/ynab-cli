@@ -1,10 +1,25 @@
 use crate::cache::Cache;
+use crate::config::Config;
 use crate::error::Result;
 use crate::output;
 use crate::secrets::SecretStore;
 
+const DEFAULT_BUDGET_TIP: &str =
+    "Tip: set a default budget (ynab config set default_budget <id>) to enable delta caching.";
+
+/// Delta caching requires a concrete `default_budget` (CLAUDE.md — the
+/// `last-used` alias bypasses the cache). Nudge users who haven't set one
+/// yet, but only while caching itself is still enabled — no point telling
+/// someone who opted out of caching to configure it.
+fn print_default_budget_tip_if_relevant(config: &Config) {
+    if config.cache_enabled() && config.default_budget.is_none() {
+        println!("{DEFAULT_BUDGET_TIP}");
+    }
+}
+
 pub fn status(json: bool) -> Result<()> {
     let path = Cache::db_path()?;
+    let config = Config::load()?;
     if !path.exists() {
         if json {
             return output::print_json(&serde_json::json!({
@@ -12,6 +27,7 @@ pub fn status(json: bool) -> Result<()> {
             }));
         }
         println!("Cache: empty ({})", path.display());
+        print_default_budget_tip_if_relevant(&config);
         return Ok(());
     }
     let size = std::fs::metadata(&path)?.len();
@@ -89,9 +105,18 @@ mod tests {
         let store = mock_store();
         let dir = tempfile::tempdir().unwrap();
         let data_dir = dir.path();
-        temp_env::with_var(
-            "YNAB_CLI_DATA_DIR",
-            Some(data_dir.to_string_lossy().to_string()),
+        let config_dir = tempfile::tempdir().unwrap();
+        temp_env::with_vars(
+            [
+                (
+                    "YNAB_CLI_DATA_DIR",
+                    Some(data_dir.to_string_lossy().to_string()),
+                ),
+                (
+                    "YNAB_CLI_CONFIG_DIR",
+                    Some(config_dir.path().to_string_lossy().to_string()),
+                ),
+            ],
             || {
                 // Create and populate cache
                 {
@@ -133,10 +158,19 @@ mod tests {
         let db_path = data_dir.join("cache.db");
         let garbage = b"not a real database".to_vec();
         std::fs::write(&db_path, &garbage).unwrap();
+        let config_dir = tempfile::tempdir().unwrap();
 
-        temp_env::with_var(
-            "YNAB_CLI_DATA_DIR",
-            Some(data_dir.to_string_lossy().to_string()),
+        temp_env::with_vars(
+            [
+                (
+                    "YNAB_CLI_DATA_DIR",
+                    Some(data_dir.to_string_lossy().to_string()),
+                ),
+                (
+                    "YNAB_CLI_CONFIG_DIR",
+                    Some(config_dir.path().to_string_lossy().to_string()),
+                ),
+            ],
             || {
                 let result = status(false);
                 assert!(result.is_ok());

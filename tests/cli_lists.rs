@@ -48,6 +48,92 @@ async fn budgets_list_renders_table_and_json() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn accounts_list_hides_deleted_in_human_output() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/budgets/last-used/accounts"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "accounts": [
+                { "id": "a-1", "name": "Chequing", "type": "checking",
+                  "on_budget": true, "closed": false, "balance": 100500,
+                  "deleted": false },
+                { "id": "a-2", "name": "Closed Card", "type": "creditCard",
+                  "on_budget": true, "closed": true, "balance": -5000,
+                  "deleted": true }
+            ], "server_knowledge": 3 }
+        })))
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    tokio::task::spawn_blocking(move || {
+        let dir = tempfile::tempdir().unwrap();
+        // human: the deleted account is filtered out entirely
+        ynab(dir.path(), &uri)
+            .args(["accounts", "list"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Chequing"))
+            .stdout(predicate::str::contains("Closed Card").not());
+        // json: raw envelope keeps the deleted account (mirrors API schema)
+        ynab(dir.path(), &uri)
+            .args(["accounts", "list", "--json"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("\"a-1\""))
+            .stdout(predicate::str::contains("\"a-2\""))
+            .stdout(predicate::str::contains("\"deleted\": true"));
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn categories_list_hides_deleted_category_in_live_group() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/budgets/last-used/categories"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "category_groups": [
+                { "id": "g-1", "name": "Bills", "hidden": false, "deleted": false,
+                  "categories": [
+                    { "id": "c-1", "name": "Rent", "hidden": false,
+                      "budgeted": 1500000, "activity": -1500000, "balance": 0,
+                      "deleted": false },
+                    { "id": "c-2", "name": "Old Gym Membership", "hidden": false,
+                      "budgeted": 0, "activity": 0, "balance": 0,
+                      "deleted": true }
+                  ] }
+            ], "server_knowledge": 5 }
+        })))
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    tokio::task::spawn_blocking(move || {
+        let dir = tempfile::tempdir().unwrap();
+        // human: the live group keeps "Rent" but drops the deleted category
+        // nested inside it
+        ynab(dir.path(), &uri)
+            .args(["categories", "list"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Rent"))
+            .stdout(predicate::str::contains("Old Gym Membership").not());
+        // json: raw envelope keeps the deleted category (mirrors API schema)
+        ynab(dir.path(), &uri)
+            .args(["categories", "list", "--json"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("\"c-1\""))
+            .stdout(predicate::str::contains("\"c-2\""))
+            .stdout(predicate::str::contains("Old Gym Membership"));
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn transactions_list_filters_and_json() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
