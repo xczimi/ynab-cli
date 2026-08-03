@@ -1,7 +1,10 @@
+pub mod accounts;
 pub mod auth;
 pub mod budgets;
+pub mod categories;
 pub mod config_cmd;
 pub mod context;
+pub mod payees;
 
 use clap::{Parser, Subcommand};
 
@@ -41,11 +44,44 @@ pub enum Command {
         #[command(subcommand)]
         command: BudgetsCommand,
     },
+    /// List accounts
+    Accounts {
+        #[command(subcommand)]
+        command: AccountsCommand,
+    },
+    /// List categories
+    Categories {
+        #[command(subcommand)]
+        command: CategoriesCommand,
+    },
+    /// List payees
+    Payees {
+        #[command(subcommand)]
+        command: PayeesCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 pub enum BudgetsCommand {
     /// List all budgets
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AccountsCommand {
+    /// List all accounts
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CategoriesCommand {
+    /// List all categories
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PayeesCommand {
+    /// List all payees
     List,
 }
 
@@ -88,6 +124,24 @@ pub async fn run(cli: Cli) -> Result<()> {
             BudgetsCommand::List => {
                 let ctx = context::build_ctx(json, budget.as_deref())?;
                 budgets::list(&ctx).await
+            }
+        },
+        Command::Accounts { command } => match command {
+            AccountsCommand::List => {
+                let ctx = context::build_ctx(json, budget.as_deref())?;
+                accounts::list(&ctx).await
+            }
+        },
+        Command::Categories { command } => match command {
+            CategoriesCommand::List => {
+                let ctx = context::build_ctx(json, budget.as_deref())?;
+                categories::list(&ctx).await
+            }
+        },
+        Command::Payees { command } => match command {
+            PayeesCommand::List => {
+                let ctx = context::build_ctx(json, budget.as_deref())?;
+                payees::list(&ctx).await
             }
         },
     }
