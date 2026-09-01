@@ -77,14 +77,12 @@ pub async fn status(store: &SecretStore, api_base_url: Option<String>) -> Result
 /// key) and the cache DB itself (with its SQLite/SQLCipher siblings) — a
 /// full-scope logout, per the 2026-08-02 user ruling.
 pub fn logout(store: &SecretStore) -> Result<()> {
-    for kind in [
-        SecretKind::Pat,
-        SecretKind::OauthClientId,
-        SecretKind::OauthClientSecret,
-        SecretKind::OauthAccessToken,
-        SecretKind::OauthRefreshToken,
-        SecretKind::CacheKey,
-    ] {
+    // Legacy kinds included so a logout on an install that never ran the
+    // OAuth-state migration still leaves nothing behind.
+    for kind in [SecretKind::Pat, SecretKind::Oauth, SecretKind::CacheKey]
+        .into_iter()
+        .chain(crate::secrets::LEGACY_OAUTH_KINDS)
+    {
         store.delete(kind)?;
     }
     if let Ok(path) = Cache::db_path() {
@@ -158,7 +156,7 @@ mod tests {
         });
         store
             .set(
-                SecretKind::OauthAccessToken,
+                SecretKind::Oauth,
                 SecretString::from(stored_oauth.to_string()),
             )
             .unwrap();

@@ -8,22 +8,39 @@ const SERVICE: &str = "ynab-cli";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretKind {
     Pat,
-    OauthClientId,
-    OauthClientSecret,
-    OauthAccessToken,
-    OauthRefreshToken,
+    /// All OAuth state — app credentials plus the token pair — as one JSON
+    /// document. It is deliberately a single entry: keychain ACLs are
+    /// per-item, so every extra entry is another authorization prompt the
+    /// user has to grant (see `auth::oauth`).
+    Oauth,
     CacheKey,
+    /// Written by installs that predate the single-entry `Oauth` layout.
+    /// Read only by the migration in `auth::oauth`, and deleted by it and
+    /// by `auth logout`; nothing else may use these.
+    LegacyOauthClientId,
+    LegacyOauthClientSecret,
+    LegacyOauthAccessToken,
+    LegacyOauthRefreshToken,
 }
+
+/// Every legacy entry, in one place so migration and logout can't drift.
+pub const LEGACY_OAUTH_KINDS: [SecretKind; 4] = [
+    SecretKind::LegacyOauthClientId,
+    SecretKind::LegacyOauthClientSecret,
+    SecretKind::LegacyOauthAccessToken,
+    SecretKind::LegacyOauthRefreshToken,
+];
 
 impl SecretKind {
     fn entry_name(self) -> &'static str {
         match self {
             SecretKind::Pat => "pat",
-            SecretKind::OauthClientId => "oauth-client-id",
-            SecretKind::OauthClientSecret => "oauth-client-secret",
-            SecretKind::OauthAccessToken => "oauth-access-token",
-            SecretKind::OauthRefreshToken => "oauth-refresh-token",
+            SecretKind::Oauth => "oauth",
             SecretKind::CacheKey => "cache-key",
+            SecretKind::LegacyOauthClientId => "oauth-client-id",
+            SecretKind::LegacyOauthClientSecret => "oauth-client-secret",
+            SecretKind::LegacyOauthAccessToken => "oauth-access-token",
+            SecretKind::LegacyOauthRefreshToken => "oauth-refresh-token",
         }
     }
 }
@@ -32,7 +49,7 @@ impl SecretKind {
 /// reused (not recreated per call) because keyring's mock store — used in
 /// tests — keeps credential state per-Entry instance.
 pub struct SecretStore {
-    entries: [Entry; 6],
+    entries: [Entry; 7],
 }
 
 impl SecretStore {
@@ -42,11 +59,12 @@ impl SecretStore {
         Ok(SecretStore {
             entries: [
                 mk(SecretKind::Pat)?,
-                mk(SecretKind::OauthClientId)?,
-                mk(SecretKind::OauthClientSecret)?,
-                mk(SecretKind::OauthAccessToken)?,
-                mk(SecretKind::OauthRefreshToken)?,
+                mk(SecretKind::Oauth)?,
                 mk(SecretKind::CacheKey)?,
+                mk(SecretKind::LegacyOauthClientId)?,
+                mk(SecretKind::LegacyOauthClientSecret)?,
+                mk(SecretKind::LegacyOauthAccessToken)?,
+                mk(SecretKind::LegacyOauthRefreshToken)?,
             ],
         })
     }

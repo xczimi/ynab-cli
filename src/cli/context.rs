@@ -182,7 +182,7 @@ mod tests {
         });
         store
             .set(
-                SecretKind::OauthAccessToken,
+                SecretKind::Oauth,
                 SecretString::from(stored_oauth.to_string()),
             )
             .unwrap();

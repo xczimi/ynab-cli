@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 
 use crate::auth::{listener, unix_now};
 use crate::error::{Error, Result};
-use crate::secrets::{SecretKind, SecretStore};
+use crate::secrets::{LEGACY_OAUTH_KINDS, SecretKind, SecretStore};
 
 const DEFAULT_OAUTH_BASE_URL: &str = "https://app.ynab.com";
 const DEFAULT_PORT: u16 = 53682;
@@ -40,10 +40,112 @@ pub struct AppCredentials {
 type ConfiguredClient =
     BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct StoredAccessToken {
+/// Every piece of OAuth state lives in ONE keychain entry.
+///
+/// macOS keychain ACLs are per-item and are pinned to the calling binary's
+/// code signature, so each additional entry costs the user another "Always
+/// Allow" prompt — and an unsigned local build earns a fresh code hash on
+/// every rebuild, which brings all of those prompts back. Folding the four
+/// former entries into one means one grant, and one keychain read per
+/// command instead of four.
+///
+/// Every field is optional because the state is built up in stages: app
+/// credentials are stored before the browser flow returns any token.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct OauthState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_secret: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    access_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    expires_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    refresh_token: Option<String>,
+}
+
+/// The legacy `oauth-access-token` entry's payload, parsed only by
+/// [`migrate_legacy_state`].
+#[derive(serde::Deserialize)]
+struct LegacyAccessToken {
     access_token: String,
     expires_at: i64,
+}
+
+/// Reads the whole OAuth state in a single keychain access, migrating a
+/// pre-consolidation install on the way if it finds one. An unparseable
+/// entry is `NotAuthenticated` rather than a hard error: the remedy is
+/// always `ynab auth login --oauth`.
+fn load_state(store: &SecretStore) -> Result<OauthState> {
+    match store.get(SecretKind::Oauth)? {
+        Some(raw) => {
+            serde_json::from_str(raw.expose_secret()).map_err(|_| Error::NotAuthenticated)
+        }
+        None => migrate_legacy_state(store),
+    }
+}
+
+fn save_state(store: &SecretStore, state: &OauthState) -> Result<()> {
+    let payload = Zeroizing::new(
+        serde_json::to_string(state)
+            .map_err(|e| Error::Config(format!("failed to serialize OAuth state: {e}")))?,
+    );
+    store.set(SecretKind::Oauth, SecretString::from(payload.as_str()))
+}
+
+/// Installs predating the single-entry layout kept OAuth state in four
+/// separate keychain entries. Fold whatever is there into one entry and
+/// delete the originals, so the user re-grants keychain access once instead
+/// of re-running the whole OAuth login. Returns the default (empty) state
+/// when there is nothing to migrate, which is the common case.
+///
+/// Deletes are best-effort: a consolidated entry that was written
+/// successfully is the thing that matters, and a leftover legacy entry is
+/// inert once `load_state` stops reading it.
+fn migrate_legacy_state(store: &SecretStore) -> Result<OauthState> {
+    let legacy_client_id = store.get(SecretKind::LegacyOauthClientId)?;
+    let legacy_access = store.get(SecretKind::LegacyOauthAccessToken)?;
+    if legacy_client_id.is_none() && legacy_access.is_none() {
+        return Ok(OauthState::default());
+    }
+
+    // A legacy access-token entry too corrupt to parse is dropped rather
+    // than failing the migration: the refresh token below can still rescue
+    // the session, and if it can't, the user re-logs in either way.
+    let (access_token, expires_at) = legacy_access
+        .and_then(|raw| serde_json::from_str::<LegacyAccessToken>(raw.expose_secret()).ok())
+        .map(|t| (Some(t.access_token), Some(t.expires_at)))
+        .unwrap_or((None, None));
+
+    let state = OauthState {
+        client_id: legacy_client_id.map(|s| s.expose_secret().to_string()),
+        client_secret: store
+            .get(SecretKind::LegacyOauthClientSecret)?
+            .map(|s| s.expose_secret().to_string()),
+        access_token,
+        expires_at,
+        refresh_token: store
+            .get(SecretKind::LegacyOauthRefreshToken)?
+            .map(|s| s.expose_secret().to_string()),
+    };
+
+    save_state(store, &state)?;
+    for kind in LEGACY_OAUTH_KINDS {
+        let _ = store.delete(kind);
+    }
+    Ok(state)
+}
+
+/// Returns `state` with a freshly issued token pair folded in, leaving the
+/// app credentials untouched.
+fn with_tokens(state: OauthState, access: &str, expires_in_secs: i64, refresh: &str) -> OauthState {
+    OauthState {
+        access_token: Some(access.to_string()),
+        expires_at: Some(unix_now() + expires_in_secs - EXPIRY_SAFETY_MARGIN_SECS),
+        refresh_token: Some(refresh.to_string()),
+        ..state
+    }
 }
 
 fn oauth_base_url() -> String {
@@ -131,28 +233,29 @@ fn read_client_secret() -> Result<SecretString> {
 /// `reset` is set. Prompting mirrors PAT login's TTY/pipe handling: visible
 /// input for the client id, hidden for the secret when interactive.
 pub fn get_or_prompt_app_credentials(store: &SecretStore, reset: bool) -> Result<AppCredentials> {
+    let state = load_state(store)?;
+
     if !reset
-        && let (Some(id), Some(secret)) = (
-            store.get(SecretKind::OauthClientId)?,
-            store.get(SecretKind::OauthClientSecret)?,
-        )
+        && let (Some(id), Some(secret)) = (state.client_id.as_deref(), state.client_secret.as_deref())
     {
         return Ok(AppCredentials {
-            client_id: id.expose_secret().to_string(),
-            client_secret: secret,
+            client_id: id.to_string(),
+            client_secret: SecretString::from(secret),
         });
     }
 
     let client_id = read_client_id()?;
     let client_secret = read_client_secret()?;
 
-    store.set(
-        SecretKind::OauthClientId,
-        SecretString::from(client_id.clone()),
-    )?;
-    store.set(
-        SecretKind::OauthClientSecret,
-        SecretString::from(client_secret.expose_secret().to_string()),
+    // Keeps any existing token pair: re-entering app credentials shouldn't
+    // silently log the user out of a session that's still valid.
+    save_state(
+        store,
+        &OauthState {
+            client_id: Some(client_id.clone()),
+            client_secret: Some(client_secret.expose_secret().to_string()),
+            ..state
+        },
     )?;
 
     Ok(AppCredentials {
@@ -171,19 +274,8 @@ pub fn store_tokens(
     expires_in_secs: i64,
     refresh: &str,
 ) -> Result<()> {
-    let stored = StoredAccessToken {
-        access_token: access.to_string(),
-        expires_at: unix_now() + expires_in_secs - EXPIRY_SAFETY_MARGIN_SECS,
-    };
-    let payload = serde_json::to_string(&stored)
-        .map_err(|e| Error::Config(format!("failed to serialize OAuth access token: {e}")))?;
-
-    store.set(SecretKind::OauthAccessToken, SecretString::from(payload))?;
-    store.set(
-        SecretKind::OauthRefreshToken,
-        SecretString::from(refresh.to_string()),
-    )?;
-    Ok(())
+    let state = load_state(store)?;
+    save_state(store, &with_tokens(state, access, expires_in_secs, refresh))
 }
 
 /// Full interactive OAuth login: obtains app credentials, builds the
@@ -245,43 +337,43 @@ pub async fn login(store: &SecretStore, reset_app: bool) -> Result<()> {
 /// `Error::NotAuthenticated`, which tells the user to run
 /// `ynab auth login --oauth`.
 pub async fn current_access_token(store: &SecretStore) -> Result<Option<SecretString>> {
-    let Some(access_json) = store.get(SecretKind::OauthAccessToken)? else {
+    let state = load_state(store)?;
+
+    let (Some(access_token), Some(expires_at)) = (state.access_token.as_deref(), state.expires_at)
+    else {
         return Ok(None);
     };
 
-    let stored: StoredAccessToken =
-        serde_json::from_str(access_json.expose_secret()).map_err(|_| Error::NotAuthenticated)?;
-
-    if stored.expires_at > unix_now() + REFRESH_LEEWAY_SECS {
-        return Ok(Some(SecretString::from(stored.access_token)));
+    if expires_at > unix_now() + REFRESH_LEEWAY_SECS {
+        return Ok(Some(SecretString::from(access_token)));
     }
 
-    let Some(refresh) = store.get(SecretKind::OauthRefreshToken)? else {
-        return Err(Error::NotAuthenticated);
-    };
-
-    refresh_access_token(store, refresh.expose_secret()).await
+    refresh_access_token(store, state).await
 }
 
+/// Takes the already-loaded `state` rather than re-reading it, so a refresh
+/// costs one keychain read and one write in total.
 async fn refresh_access_token(
     store: &SecretStore,
-    refresh_token: &str,
+    state: OauthState,
 ) -> Result<Option<SecretString>> {
-    let (Some(client_id), Some(client_secret)) = (
-        store.get(SecretKind::OauthClientId)?,
-        store.get(SecretKind::OauthClientSecret)?,
+    let (Some(client_id), Some(client_secret), Some(refresh_token)) = (
+        state.client_id.as_deref(),
+        state.client_secret.as_deref(),
+        state.refresh_token.as_deref(),
     ) else {
         return Err(Error::NotAuthenticated);
     };
     let creds = AppCredentials {
-        client_id: client_id.expose_secret().to_string(),
-        client_secret,
+        client_id: client_id.to_string(),
+        client_secret: SecretString::from(client_secret),
     };
+    let refresh_token = refresh_token.to_string();
     let client = build_client(&creds)?;
     let http = http_client()?;
 
     let token_result = client
-        .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
+        .exchange_refresh_token(&RefreshToken::new(refresh_token))
         .request_async(&http)
         .await
         .map_err(|_| Error::NotAuthenticated)?;
@@ -301,9 +393,12 @@ async fn refresh_access_token(
         .secret()
         .to_string();
 
-    store_tokens(store, &new_access, expires_in, &new_refresh)?;
+    save_state(
+        store,
+        &with_tokens(state, &new_access, expires_in, &new_refresh),
+    )?;
 
-    Ok(Some(SecretString::from(new_access)))
+    Ok(Some(SecretString::from(new_access.as_str())))
 }
 
 #[cfg(test)]
@@ -344,18 +439,16 @@ mod tests {
         let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
         let store = mock_store();
 
-        // expires_in negative enough to be already-expired even past the
-        // safety margin, and no refresh token stored.
-        let stored = StoredAccessToken {
-            access_token: "stale".to_string(),
-            expires_at: unix_now() - 1000,
-        };
-        store
-            .set(
-                SecretKind::OauthAccessToken,
-                SecretString::from(serde_json::to_string(&stored).unwrap()),
-            )
-            .unwrap();
+        // Already expired even past the safety margin, and no refresh token.
+        save_state(
+            &store,
+            &OauthState {
+                access_token: Some("stale".to_string()),
+                expires_at: Some(unix_now() - 1000),
+                ..OauthState::default()
+            },
+        )
+        .unwrap();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let err = rt.block_on(current_access_token(&store)).unwrap_err();
@@ -363,36 +456,116 @@ mod tests {
     }
 
     #[test]
+    fn app_credentials_and_tokens_share_one_entry() {
+        let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
+        let store = mock_store();
+
+        save_state(
+            &store,
+            &OauthState {
+                client_id: Some("client-1".to_string()),
+                client_secret: Some("secret-1".to_string()),
+                ..OauthState::default()
+            },
+        )
+        .unwrap();
+        store_tokens(&store, "access-abc", 3600, "refresh-xyz").unwrap();
+
+        // Storing tokens must not drop the app credentials stored earlier,
+        // and everything must land in the single `Oauth` entry.
+        let state = load_state(&store).unwrap();
+        assert_eq!(state.client_id.as_deref(), Some("client-1"));
+        assert_eq!(state.client_secret.as_deref(), Some("secret-1"));
+        assert_eq!(state.access_token.as_deref(), Some("access-abc"));
+        assert_eq!(state.refresh_token.as_deref(), Some("refresh-xyz"));
+
+        for kind in LEGACY_OAUTH_KINDS {
+            assert!(store.get(kind).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn migrates_legacy_split_entries_into_one() {
+        let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
+        let store = mock_store();
+
+        // Exactly what a pre-consolidation install left behind.
+        store
+            .set(
+                SecretKind::LegacyOauthClientId,
+                SecretString::from("client-1"),
+            )
+            .unwrap();
+        store
+            .set(
+                SecretKind::LegacyOauthClientSecret,
+                SecretString::from("secret-1"),
+            )
+            .unwrap();
+        store
+            .set(
+                SecretKind::LegacyOauthAccessToken,
+                SecretString::from(
+                    serde_json::json!({
+                        "access_token": "legacy-access",
+                        "expires_at": unix_now() + 3600,
+                    })
+                    .to_string(),
+                ),
+            )
+            .unwrap();
+        store
+            .set(
+                SecretKind::LegacyOauthRefreshToken,
+                SecretString::from("legacy-refresh"),
+            )
+            .unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let got = rt.block_on(current_access_token(&store)).unwrap();
+        assert_eq!(got.unwrap().expose_secret(), "legacy-access");
+
+        // Every field carried over into the single entry...
+        let state = load_state(&store).unwrap();
+        assert_eq!(state.client_id.as_deref(), Some("client-1"));
+        assert_eq!(state.client_secret.as_deref(), Some("secret-1"));
+        assert_eq!(state.access_token.as_deref(), Some("legacy-access"));
+        assert_eq!(state.refresh_token.as_deref(), Some("legacy-refresh"));
+
+        // ...and the old entries are gone, so they're never prompted for again.
+        for kind in LEGACY_OAUTH_KINDS {
+            assert!(store.get(kind).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn nothing_stored_needs_no_migration() {
+        let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
+        let store = mock_store();
+
+        // A fresh install must not leave an empty `Oauth` entry behind just
+        // by being asked for a token.
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        assert!(rt.block_on(current_access_token(&store)).unwrap().is_none());
+        assert!(store.get(SecretKind::Oauth).unwrap().is_none());
+    }
+
+    #[test]
     fn expired_token_refreshes_and_rotates_refresh_token() {
         let _guard = crate::cache::tests::TEST_LOCK.lock().unwrap();
         let store = mock_store();
 
-        store
-            .set(SecretKind::OauthClientId, SecretString::from("client-1"))
-            .unwrap();
-        store
-            .set(
-                SecretKind::OauthClientSecret,
-                SecretString::from("secret-1"),
-            )
-            .unwrap();
-
-        let stored = StoredAccessToken {
-            access_token: "old-access".to_string(),
-            expires_at: unix_now() - 10,
-        };
-        store
-            .set(
-                SecretKind::OauthAccessToken,
-                SecretString::from(serde_json::to_string(&stored).unwrap()),
-            )
-            .unwrap();
-        store
-            .set(
-                SecretKind::OauthRefreshToken,
-                SecretString::from("old-refresh"),
-            )
-            .unwrap();
+        save_state(
+            &store,
+            &OauthState {
+                client_id: Some("client-1".to_string()),
+                client_secret: Some("secret-1".to_string()),
+                access_token: Some("old-access".to_string()),
+                expires_at: Some(unix_now() - 10),
+                refresh_token: Some("old-refresh".to_string()),
+            },
+        )
+        .unwrap();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let server = rt.block_on(async {
@@ -417,13 +590,10 @@ mod tests {
         .unwrap();
         assert_eq!(got.unwrap().expose_secret(), "new-access");
 
-        assert_eq!(
-            store
-                .get(SecretKind::OauthRefreshToken)
-                .unwrap()
-                .unwrap()
-                .expose_secret(),
-            "new-refresh"
-        );
+        // The rotated refresh token is persisted, and the app credentials
+        // survive the refresh.
+        let state = load_state(&store).unwrap();
+        assert_eq!(state.refresh_token.as_deref(), Some("new-refresh"));
+        assert_eq!(state.client_id.as_deref(), Some("client-1"));
     }
 }
