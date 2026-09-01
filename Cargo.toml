@@ -1,6 +1,6 @@
 [package]
 name = "ynab-cli"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Absolutely read-only CLI for the YNAB API with first-class MCP support, in the spirit of google-readonly (gro)."
 license = "MIT"
