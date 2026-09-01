@@ -7,7 +7,11 @@ default:
     @just --list
 
 # Everything CI runs, in CI's order, so green here means green there.
-ci: fmt-check lint test audit
+ci: read-only fmt-check lint test audit
+
+# The read-only guarantee: GET must be the only HTTP verb in src/.
+read-only:
+    ./scripts/check-read-only.sh
 
 fmt:
     cargo fmt

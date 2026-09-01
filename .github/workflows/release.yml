@@ -31,6 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The crate's central claim, enforced rather than documented.
+      - run: ./scripts/check-read-only.sh
+
       - name: Install pinned toolchain
         run: |
           rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
