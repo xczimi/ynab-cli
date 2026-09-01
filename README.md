@@ -38,6 +38,20 @@ the guarantee could not reach crates.io.
 cargo install ynab-cli
 ```
 
+**On Linux, install the D-Bus development headers first.** The keychain
+backend (`keyring`'s secret-service support) links against `libdbus`, and
+the build fails with `The system library 'dbus-1' required by crate
+'libdbus-sys' was not found` without them:
+
+```sh
+sudo apt install libdbus-1-dev pkg-config          # Debian/Ubuntu
+sudo dnf install dbus-devel pkgconf-pkg-config     # Fedora/RHEL
+sudo pacman -S dbus pkgconf                        # Arch
+```
+
+macOS and Windows need nothing extra — they talk to the system Keychain and
+Credential Manager directly.
+
 ### Alternative: install from source
 
 ```sh
