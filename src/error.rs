@@ -18,6 +18,10 @@ pub enum Error {
     Http(#[from] reqwest::Error),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// stdout was closed by the reader (`ynab ... | head`). Not a
+    /// failure: the caller got what it asked for and hung up.
+    #[error("broken pipe")]
+    BrokenPipe,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -28,6 +32,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// instead of propagating the error to the user.
 pub fn cache_error(e: &Error) -> bool {
     matches!(e, Error::Cache(_))
+}
+
+/// True when the reader closed stdout on us. `main` exits 0 and silent
+/// on this, matching how every other Unix filter behaves under `| head`.
+pub fn broken_pipe(e: &Error) -> bool {
+    matches!(e, Error::BrokenPipe)
 }
 
 #[cfg(test)]

@@ -46,7 +46,7 @@ pub async fn login_with_token(
     let client = make_client(client_token, api_base_url);
     let user = client.get_user().await?;
     store.set(SecretKind::Pat, token)?;
-    println!("Logged in. YNAB user id: {}", user.id);
+    crate::output::print_line(&format!("Logged in. YNAB user id: {}", user.id))?;
     Ok(())
 }
 
@@ -54,7 +54,7 @@ pub async fn status(store: &SecretStore, api_base_url: Option<String>) -> Result
     if let Some(token) = store.get(SecretKind::Pat)? {
         let client = make_client(token, api_base_url);
         let user = client.get_user().await?;
-        println!("Logged in (PAT). YNAB user id: {}", user.id);
+        crate::output::print_line(&format!("Logged in (PAT). YNAB user id: {}", user.id))?;
         return Ok(());
     }
 
@@ -62,11 +62,11 @@ pub async fn status(store: &SecretStore, api_base_url: Option<String>) -> Result
         Ok(Some(token)) => {
             let client = make_client(token, api_base_url);
             let user = client.get_user().await?;
-            println!("Logged in (OAuth). YNAB user id: {}", user.id);
+            crate::output::print_line(&format!("Logged in (OAuth). YNAB user id: {}", user.id))?;
             Ok(())
         }
         Ok(None) | Err(Error::NotAuthenticated) => {
-            println!("Not logged in. Run `ynab auth login`.");
+            crate::output::print_line("Not logged in. Run `ynab auth login`.")?;
             Err(Error::NotAuthenticated)
         }
         Err(e) => Err(e),
@@ -88,7 +88,7 @@ pub fn logout(store: &SecretStore) -> Result<()> {
     if let Ok(path) = Cache::db_path() {
         crate::cache::remove_db_and_siblings(&path);
     }
-    println!("Logged out. Credentials and cached data removed.");
+    crate::output::print_line("Logged out. Credentials and cached data removed.")?;
     Ok(())
 }
 

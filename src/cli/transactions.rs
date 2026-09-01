@@ -182,13 +182,10 @@ pub async fn list(ctx: &mut Ctx, filters: Filters) -> Result<()> {
             ]
         })
         .collect();
-    println!(
-        "{}",
-        output::render_table(
-            &["Date", "Account", "Payee", "Category", "Memo", "Amount"],
-            rows
-        )
-    );
+    output::print_line(&output::render_table(
+        &["Date", "Account", "Payee", "Category", "Memo", "Amount"],
+        rows,
+    ))?;
     Ok(())
 }
 

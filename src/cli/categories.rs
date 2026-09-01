@@ -35,13 +35,10 @@ pub async fn list(ctx: &mut Ctx) -> Result<()> {
             ]);
         }
     }
-    println!(
-        "{}",
-        output::render_table(
-            &["Group", "Category", "Budgeted", "Activity", "Balance"],
-            rows
-        )
-    );
+    output::print_line(&output::render_table(
+        &["Group", "Category", "Budgeted", "Activity", "Balance"],
+        rows,
+    ))?;
     Ok(())
 }
 

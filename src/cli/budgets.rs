@@ -20,9 +20,9 @@ pub async fn list(ctx: &mut Ctx) -> Result<()> {
             ]
         })
         .collect();
-    println!(
-        "{}",
-        output::render_table(&["Name", "Id", "First Month", "Last Month"], rows)
-    );
+    output::print_line(&output::render_table(
+        &["Name", "Id", "First Month", "Last Month"],
+        rows,
+    ))?;
     Ok(())
 }

@@ -11,10 +11,11 @@ const DEFAULT_BUDGET_TIP: &str =
 /// `last-used` alias bypasses the cache). Nudge users who haven't set one
 /// yet, but only while caching itself is still enabled — no point telling
 /// someone who opted out of caching to configure it.
-fn print_default_budget_tip_if_relevant(config: &Config) {
+fn print_default_budget_tip_if_relevant(config: &Config) -> Result<()> {
     if config.cache_enabled() && config.default_budget.is_none() {
-        println!("{DEFAULT_BUDGET_TIP}");
+        output::print_line(DEFAULT_BUDGET_TIP)?;
     }
+    Ok(())
 }
 
 pub fn status(json: bool) -> Result<()> {
@@ -26,8 +27,8 @@ pub fn status(json: bool) -> Result<()> {
                 "path": path.display().to_string(), "exists": false
             }));
         }
-        println!("Cache: empty ({})", path.display());
-        print_default_budget_tip_if_relevant(&config);
+        output::print_line(&format!("Cache: empty ({})", path.display()))?;
+        print_default_budget_tip_if_relevant(&config)?;
         return Ok(());
     }
     let size = std::fs::metadata(&path)?.len();
@@ -45,10 +46,10 @@ pub fn status(json: bool) -> Result<()> {
                     "readable": false
                 }));
             }
-            println!(
+            output::print_line(&format!(
                 "Cache: unreadable, will be rebuilt on next use ({})",
                 path.display()
-            );
+            ))?;
             return Ok(());
         }
     };
@@ -68,25 +69,22 @@ pub fn status(json: bool) -> Result<()> {
             "size_bytes": size, "resources": resources
         }));
     }
-    println!("Cache: {} ({} bytes)", path.display(), size);
+    output::print_line(&format!("Cache: {} ({} bytes)", path.display(), size))?;
     let table_rows = rows
         .into_iter()
         .map(|(b, r, sk, n)| vec![b, r, sk.to_string(), n.to_string()])
         .collect();
-    println!(
-        "{}",
-        output::render_table(
-            &["Budget", "Resource", "Server Knowledge", "Entities"],
-            table_rows
-        )
-    );
+    output::print_line(&output::render_table(
+        &["Budget", "Resource", "Server Knowledge", "Entities"],
+        table_rows,
+    ))?;
     Ok(())
 }
 
 pub fn clear() -> Result<()> {
     let path = Cache::db_path()?;
     crate::cache::remove_db_and_siblings(&path);
-    println!("Cache cleared.");
+    output::print_line("Cache cleared.")?;
     Ok(())
 }
 

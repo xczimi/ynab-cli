@@ -1,4 +1,6 @@
+use crate::error::{Error, Result};
 use comfy_table::{Table, presets};
+use std::io::Write;
 
 /// Milliunits → currency string: divide by 1000, 2 decimals,
 /// round half away from zero, outflows keep their minus sign.
@@ -24,11 +26,25 @@ pub fn render_table(headers: &[&str], rows: Vec<Vec<String>>) -> String {
     table.to_string()
 }
 
-pub fn print_json(value: &serde_json::Value) -> crate::error::Result<()> {
-    let text = serde_json::to_string_pretty(value)
-        .map_err(|e| crate::error::Error::Decode(e.to_string()))?;
-    println!("{text}");
-    Ok(())
+/// The ONLY path to stdout in this codebase. `println!` panics when the
+/// reader hangs up (`ynab ... | head`); this reports it as an error the
+/// caller can classify instead.
+pub fn print_line(text: &str) -> Result<()> {
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "{text}").map_err(classify)?;
+    out.flush().map_err(classify)
+}
+
+fn classify(e: std::io::Error) -> Error {
+    match e.kind() {
+        std::io::ErrorKind::BrokenPipe => Error::BrokenPipe,
+        _ => Error::Io(e),
+    }
+}
+
+pub fn print_json(value: &serde_json::Value) -> Result<()> {
+    let text = serde_json::to_string_pretty(value).map_err(|e| Error::Decode(e.to_string()))?;
+    print_line(&text)
 }
 
 #[cfg(test)]

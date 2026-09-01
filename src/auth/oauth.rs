@@ -296,7 +296,9 @@ pub async fn login(store: &SecretStore, reset_app: bool) -> Result<()> {
         .add_scope(Scope::new("read-only".to_string()))
         .url();
 
-    println!("Open this URL to authorize ynab-cli:\n{auth_url}");
+    crate::output::print_line(&format!(
+        "Open this URL to authorize ynab-cli:\n{auth_url}"
+    ))?;
 
     if std::env::var("YNAB_CLI_NO_BROWSER").is_err() {
         let _ = webbrowser::open(auth_url.as_str());
@@ -324,9 +326,9 @@ pub async fn login(store: &SecretStore, reset_app: bool) -> Result<()> {
 
     store_tokens(store, &access, expires_in, &refresh)?;
 
-    println!(
-        "Logged in via OAuth. Access token valid for about 2 hours; it will refresh automatically."
-    );
+    crate::output::print_line(
+        "Logged in via OAuth. Access token valid for about 2 hours; it will refresh automatically.",
+    )?;
     Ok(())
 }
 

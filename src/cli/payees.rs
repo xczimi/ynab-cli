@@ -30,7 +30,7 @@ pub async fn list(ctx: &mut Ctx) -> Result<()> {
         .filter(|p| !p.deleted)
         .map(|p| vec![p.name.clone(), p.id.clone()])
         .collect();
-    println!("{}", output::render_table(&["Name", "Id"], rows));
+    output::print_line(&output::render_table(&["Name", "Id"], rows))?;
     Ok(())
 }
 
