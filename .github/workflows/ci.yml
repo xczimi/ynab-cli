@@ -46,6 +46,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # keyring/sync-secret-service pulls libdbus-sys, which needs the
+      # system dbus headers. Not preinstalled on GitHub Linux runners.
+      - name: Install Linux keyring build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked

@@ -36,6 +36,12 @@ jobs:
           rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
           rustup default "$RUST_VERSION"
 
+      # keyring/sync-secret-service pulls libdbus-sys, which needs the
+      # system dbus headers. Not preinstalled on GitHub Linux runners.
+      - name: Install Linux keyring build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
       # A tag that disagrees with Cargo.toml would publish the wrong version
       # under the right name, and crates.io releases cannot be undone.
       - name: Tag must match the crate version
@@ -66,6 +72,12 @@ jobs:
 
       - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
         id: auth
+
+      # keyring/sync-secret-service pulls libdbus-sys, which needs the
+      # system dbus headers. Not preinstalled on GitHub Linux runners.
+      - name: Install Linux keyring build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - run: cargo publish --locked
         env:
