@@ -18,14 +18,25 @@ access token and can never touch budget data — and it always requests
 servers accept a write. If write support is ever wanted, it will live in a
 separate tool — never in `ynab-cli`.
 
+You don't have to take that on trust — or even read the code. The claim is
+enforced, and the check ships inside the published crate, so you can run it
+against the source you downloaded:
+
+```sh
+./scripts/check-read-only.sh
+```
+
+It fails if an HTTP write verb (`post`, `put`, `patch`, or a method-agnostic
+`.request(`) appears anywhere in `src/`, if the API layer calls `delete`, or
+if `src/api/client.rs` reaches `reqwest` through any verb but `.get`. Every
+push, every pull request and every release runs it, so a change that broke
+the guarantee could not reach crates.io.
+
 ## Install
 
 ```sh
 cargo install ynab-cli
 ```
-
-> **Not on crates.io yet.** Until the first release is published, use the
-> from-source install below — it produces the same binary.
 
 ### Alternative: install from source
 
