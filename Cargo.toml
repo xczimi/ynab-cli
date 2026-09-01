@@ -5,6 +5,10 @@ edition = "2024"
 description = "Absolutely read-only CLI for the YNAB API with first-class MCP support, in the spirit of google-readonly (gro)."
 license = "MIT"
 repository = "https://github.com/xczimi/ynab-cli"
+readme = "README.md"
+keywords = ["ynab", "budget", "finance", "mcp", "read-only"]
+categories = ["command-line-utilities", "api-bindings"]
+exclude = ["CLAUDE.md", "docs/", "mise.toml"]
 
 [[bin]]
 name = "ynab"
