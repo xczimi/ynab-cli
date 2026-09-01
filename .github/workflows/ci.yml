@@ -1,0 +1,69 @@
+# Verifies every push and pull request. Release publishing lives in
+# release.yml, which re-runs these same checks before it uploads.
+#
+# Third-party actions are pinned by commit SHA rather than tag, matching
+# release.yml, so a moved tag cannot change what runs here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, so a newly published advisory against an unchanged lockfile
+    # still surfaces without waiting for the next commit.
+    - cron: '17 6 * * 1'
+
+permissions: {}
+
+env:
+  # Matches the toolchain pinned in mise.toml.
+  RUST_VERSION: 1.95.0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux and macOS exercise the secret-service and Keychain builds of
+        # the `keyring` crate. Tests themselves use its mock credential
+        # builder, so no real keychain is touched.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
+          rustup default "$RUST_VERSION"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  audit:
+    name: Security advisories
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # cargo-audit itself is the expensive part; keep the built binary.
+          cache-bin: true
+
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
