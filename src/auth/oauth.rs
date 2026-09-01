@@ -79,9 +79,7 @@ struct LegacyAccessToken {
 /// always `ynab auth login --oauth`.
 fn load_state(store: &SecretStore) -> Result<OauthState> {
     match store.get(SecretKind::Oauth)? {
-        Some(raw) => {
-            serde_json::from_str(raw.expose_secret()).map_err(|_| Error::NotAuthenticated)
-        }
+        Some(raw) => serde_json::from_str(raw.expose_secret()).map_err(|_| Error::NotAuthenticated),
         None => migrate_legacy_state(store),
     }
 }
@@ -236,7 +234,8 @@ pub fn get_or_prompt_app_credentials(store: &SecretStore, reset: bool) -> Result
     let state = load_state(store)?;
 
     if !reset
-        && let (Some(id), Some(secret)) = (state.client_id.as_deref(), state.client_secret.as_deref())
+        && let (Some(id), Some(secret)) =
+            (state.client_id.as_deref(), state.client_secret.as_deref())
     {
         return Ok(AppCredentials {
             client_id: id.to_string(),
@@ -296,9 +295,7 @@ pub async fn login(store: &SecretStore, reset_app: bool) -> Result<()> {
         .add_scope(Scope::new("read-only".to_string()))
         .url();
 
-    crate::output::print_line(&format!(
-        "Open this URL to authorize ynab-cli:\n{auth_url}"
-    ))?;
+    crate::output::print_line(&format!("Open this URL to authorize ynab-cli:\n{auth_url}"))?;
 
     if std::env::var("YNAB_CLI_NO_BROWSER").is_err() {
         let _ = webbrowser::open(auth_url.as_str());
