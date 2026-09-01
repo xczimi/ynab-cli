@@ -24,6 +24,35 @@ separate tool — never in `ynab-cli`.
 cargo install ynab-cli
 ```
 
+> **Not on crates.io yet.** Until the first release is published, use the
+> from-source install below — it produces the same binary.
+
+### Alternative: install from source
+
+```sh
+git clone https://github.com/xczimi/ynab-cli
+cd ynab-cli
+cargo install --path .
+```
+
+Either way you get a single binary named `ynab` (not `ynab-cli`) in
+`~/.cargo/bin`; add `--force` to overwrite an earlier install.
+
+The toolchain is pinned in `mise.toml` (Rust 1.95.0), so
+[mise](https://mise.jdx.dev) users can run `mise install` from the repo root
+to get the right compiler; any Rust 1.95+ toolchain works too. The first
+build compiles SQLCipher and OpenSSL from source (`rusqlite`'s
+`bundled-sqlcipher-vendored-openssl` feature), so expect a few minutes and a
+working C compiler — later builds take seconds.
+
+To work in the tree without installing:
+
+```sh
+cargo build --release          # → target/release/ynab
+cargo test                     # wiremock-backed test suite
+cargo run --release -- budgets list
+```
+
 ## Quick start (Personal Access Token)
 
 The fastest way to get going. Generate a token from your
