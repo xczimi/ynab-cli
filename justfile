@@ -30,21 +30,36 @@ audit:
     fi
     cargo audit
 
+# What has landed since the last release — the evidence for choosing a
+# bump type. Deciding patch vs minor vs major is a judgement call; this
+# recipe only shows you what you are deciding about.
+[doc("Show commits since the last release tag")]
+changes:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    last=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+    if [[ -z "$last" ]]; then
+        echo "no release tags yet; showing all commits"
+        git log --oneline
+        exit 0
+    fi
+    echo "since $last:"
+    git log --oneline "$last..HEAD"
+
 # Cut a release: bump the version, tag it, and let release.yml publish to
-# crates.io. Usage: just release 0.1.3
+# crates.io. Usage: just release patch | minor | major | 0.1.3
 #
 # Refuses to run unless main is clean, synced, and green in CI. Set
 # ALLOW_RED_CI=1 to release anyway.
 [doc("Bump the version, tag it, and let CI publish to crates.io")]
-release version:
+release spec:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    version="{{version}}"
-    tag="v$version"
-
-    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        echo "not a semver version: $version" >&2
+    spec="{{spec}}"
+    if [[ ! "$spec" =~ ^(patch|minor|major)$ ]] && \
+       [[ ! "$spec" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "expected patch, minor, major, or an explicit X.Y.Z — got '$spec'" >&2
         exit 1
     fi
 
@@ -65,11 +80,6 @@ release version:
         exit 1
     fi
 
-    if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-        echo "tag $tag already exists" >&2
-        exit 1
-    fi
-
     # A crates.io release cannot be undone, so it is only worth as much as
     # the signal on the commit it is cut from.
     sha=$(git rev-parse HEAD)
@@ -84,6 +94,31 @@ release version:
     fi
 
     current=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+    IFS=. read -r cur_major cur_minor cur_patch <<< "$current"
+
+    case "$spec" in
+        patch) version="$cur_major.$cur_minor.$((cur_patch + 1))" ;;
+        minor) version="$cur_major.$((cur_minor + 1)).0" ;;
+        major)
+            version="$((cur_major + 1)).0.0"
+            # Cargo treats 0.1.x as compatible within 0.1, so while the crate
+            # is 0.x the breaking bump is `minor` (0.1.2 -> 0.2.0). Warn
+            # rather than silently remap: 1.0.0 is a real decision.
+            if [[ "$cur_major" == "0" ]]; then
+                echo "note: at $current a breaking change is 'minor' ($cur_major.$((cur_minor + 1)).0)." >&2
+                echo "      'major' here means committing to $version. Ctrl-C within 5s to reconsider." >&2
+                sleep 5
+            fi
+            ;;
+        *) version="$spec" ;;
+    esac
+    tag="v$version"
+
+    if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+        echo "tag $tag already exists" >&2
+        exit 1
+    fi
+
     echo "==> $current -> $version"
 
     # Portable in-place edit of the first `version = ` line (BSD sed lacks
